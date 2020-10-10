@@ -38,7 +38,7 @@ pub type Tag = String;
 pub struct Tool {
     name: String,
     program: String,
-    existence_confirmation: Args,
+    existence_confirmation: Option<Args>,
     install_instructions: String,
     runners: HashMap<Tag, Runner>,
 }
@@ -103,7 +103,6 @@ pub struct Test {
     tag: Tag,
     file: String,
     extra_args: Vec<String>,
-    pipe_in: Option<String>,
 }
 
 impl Test {
@@ -111,14 +110,14 @@ impl Test {
         s.replace("{NAME}", &self.name)
             .replace("{TAG}", &self.tag)
             .replace("{FILE}", &self.file)
-            .replace("\"...\"", &self.extra_args.join(" "))
-            .replace("'...'", &self.extra_args.join(" "))
+            .replace("\"{...}\"", &self.extra_args.join(" "))
+            .replace("'{...}'", &self.extra_args.join(" "))
     }
 
     pub fn interpolated_into_args(&self, args: &Args) -> Args {
         let mut res = vec![];
         for arg in args {
-            if arg == "..." {
+            if arg == "{...}" {
                 res.append(&mut self.extra_args.clone());
             } else {
                 res.push(self.interpolated_into(arg));
@@ -137,8 +136,10 @@ pub struct BenchifyConfig {
 }
 
 impl BenchifyConfig {
-    fn confirm_config_sanity(&self) {
+    fn confirm_config_sanity(&self) -> Result<()> {
+        let mut errored = false;
         if self.benchify_version != 1 {
+            errored = true;
             error!(
                 "Found config for version {}. Currently only version 1 is supported.",
                 self.benchify_version
@@ -151,6 +152,7 @@ impl BenchifyConfig {
             trace!("Confirming tags");
             let tool_tags = tool.runners.keys().cloned().collect();
             if !self.tags.is_subset(&tool_tags) {
+                errored = true;
                 error!(
                     "Not all runners for {} have been defined. Missing: {:?}",
                     tool.name,
@@ -158,6 +160,7 @@ impl BenchifyConfig {
                 );
             }
             if !self.tags.is_superset(&tool_tags) {
+                errored = true;
                 error!(
                     "Invalid set of runner tags found for {}. Found extra: {:?}",
                     tool.name,
@@ -166,18 +169,22 @@ impl BenchifyConfig {
             }
 
             trace!("Confirming runnability");
-            if std::process::Command::new(&tool.program)
-                .args(&tool.existence_confirmation)
-                .output()
-                .is_err()
-            {
+            let mut ec_cmd = std::process::Command::new(&tool.program);
+            let ec_cmd = if let Some(ec_args) = &tool.existence_confirmation {
+                ec_cmd.args(ec_args)
+            } else {
+                &mut ec_cmd
+            };
+
+            if ec_cmd.output().is_err() {
                 info!(
                     "Ran {} with args {:?}",
                     tool.program, tool.existence_confirmation
                 );
+                errored = true;
                 error!(
-                    "Could not confirm that {} is executable.\n\
-                            Install instructions: {}",
+                    "Could not confirm that {} can be executed.\n\t\
+                     Suggested install instructions:\n\t\t\t{}\n",
                     tool.name, tool.install_instructions,
                 );
             }
@@ -188,6 +195,7 @@ impl BenchifyConfig {
 
             trace!("Confirming tags");
             if !self.tags.contains(&test.tag) {
+                errored = true;
                 error!(
                     "Invalid tag {} for test {}. Expected one of {:?}",
                     test.tag, test.name, self.tags
@@ -196,26 +204,23 @@ impl BenchifyConfig {
 
             trace!("Confirming file existence");
             if !std::path::Path::new(&test.file).exists() {
+                errored = true;
                 error!(
                     "Could not find file {} for test {}. Are you sure it exists?",
                     test.file, test.name
                 );
             }
+        }
 
-            if let Some(pipe_in) = &test.pipe_in {
-                trace!("Confirming pipe-in file existence");
-                if !std::path::Path::new(pipe_in).exists() {
-                    error!(
-                        "Could not find pipe-in file {} for test {}. Are you sure it exists?",
-                        pipe_in, test.name
-                    );
-                }
-            }
+        if errored {
+            Err(eyre!("Errors during early config tests"))
+        } else {
+            Ok(())
         }
     }
 
     pub fn execute(&self) -> Result<BenchifyResults> {
-        self.confirm_config_sanity();
+        self.confirm_config_sanity()?;
 
         Ok(BenchifyResults {
             results: self
@@ -258,6 +263,14 @@ fn main() -> Result<()> {
     color_eyre::install()?;
     pretty_env_logger::init();
 
+    {
+        let template_toml = include_str!("template.toml");
+        if let Ok(_template_config) = toml::from_str::<BenchifyConfig>(template_toml) {
+        } else {
+            panic!("Benchify seems horribly broken somehow. Try getting a recent version.")
+        }
+    }
+
     let opts = CmdLineOpts::parse();
 
     let config: BenchifyConfig = toml::from_str(
@@ -266,7 +279,6 @@ fn main() -> Result<()> {
     )?;
 
     let results = config.execute()?;
-
     println!("{:?}", results);
 
     Ok(())
