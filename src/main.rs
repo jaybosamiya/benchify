@@ -23,11 +23,13 @@ struct CmdLineOpts {
 
 type Args = Vec<String>;
 
+type ShellCommand = String;
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Runner {
-    prepare: Option<Args>,
+    prepare: Option<ShellCommand>,
     run: Args,
-    cleanup: Option<Args>,
+    cleanup: Option<ShellCommand>,
 }
 
 pub type Tag = String;
@@ -35,10 +37,64 @@ pub type Tag = String;
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Tool {
     name: String,
-    binary: String,
+    program: String,
     existence_confirmation: Args,
     install_instructions: String,
     runners: HashMap<Tag, Runner>,
+}
+
+impl Tool {
+    fn run_cmd(&self, cmdtype: &str, test: &Test, cmd: &ShellCommand) -> Result<()> {
+        trace!("{} of tool {} for {}", cmdtype, self.name, &test.tag);
+        let cmd = test.interpolated_into(cmd);
+        trace!("Running `{}`", cmd);
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .output()?;
+        if output.status.success() {
+            trace!("{} generated output\n{:?}", cmdtype, output);
+        } else {
+            error!(
+                "{} of {} for {} failed with status code {}",
+                cmdtype, self.name, test.tag, output.status
+            )
+        }
+        Ok(())
+    }
+
+    pub fn prepare(&self, test: &Test) -> Result<()> {
+        if let Some(cmd) = &self.runners[&test.tag].prepare {
+            self.run_cmd("Preparation", test, cmd)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn run(&self, test: &Test) -> Result<std::time::Duration> {
+        let args = test.interpolated_into_args(&self.runners[&test.tag].run);
+        trace!("Running {} with args {:?}", self.program, args);
+        let timer = std::time::Instant::now();
+        let output = std::process::Command::new(&self.program)
+            .args(args)
+            .output()?;
+        let elapsed_time = timer.elapsed();
+        if output.status.success() {
+            trace!("Generated output\n{:?}", output);
+            info!("Ran {} in {} ms", self.name, elapsed_time.as_millis());
+        } else {
+            error!("Command exited with non zero status code {}", output.status)
+        }
+        Ok(elapsed_time)
+    }
+
+    pub fn cleanup(&self, test: &Test) -> Result<()> {
+        if let Some(cmd) = &self.runners[&test.tag].cleanup {
+            self.run_cmd("Clean up", test, cmd)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -46,8 +102,30 @@ pub struct Test {
     name: String,
     tag: Tag,
     file: String,
-    command: String,
+    extra_args: Vec<String>,
     pipe_in: Option<String>,
+}
+
+impl Test {
+    pub fn interpolated_into(&self, s: &str) -> String {
+        s.replace("{NAME}", &self.name)
+            .replace("{TAG}", &self.tag)
+            .replace("{FILE}", &self.file)
+            .replace("\"...\"", &self.extra_args.join(" "))
+            .replace("'...'", &self.extra_args.join(" "))
+    }
+
+    pub fn interpolated_into_args(&self, args: &Args) -> Args {
+        let mut res = vec![];
+        for arg in args {
+            if arg == "..." {
+                res.append(&mut self.extra_args.clone());
+            } else {
+                res.push(self.interpolated_into(arg));
+            }
+        }
+        res
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -88,14 +166,14 @@ impl BenchifyConfig {
             }
 
             trace!("Confirming runnability");
-            if std::process::Command::new(&tool.binary)
+            if std::process::Command::new(&tool.program)
                 .args(&tool.existence_confirmation)
                 .output()
                 .is_err()
             {
                 info!(
                     "Ran {} with args {:?}",
-                    tool.binary, tool.existence_confirmation
+                    tool.program, tool.existence_confirmation
                 );
                 error!(
                     "Could not confirm that {} is executable.\n\
@@ -138,14 +216,42 @@ impl BenchifyConfig {
 
     pub fn execute(&self) -> Result<BenchifyResults> {
         self.confirm_config_sanity();
-        todo!()
+
+        Ok(BenchifyResults {
+            results: self
+                .tests
+                .iter()
+                .map(|test| {
+                    info!("Running tests for {}", test.name);
+                    debug!("Test: {:?}", test);
+
+                    Ok((
+                        test.name.clone(),
+                        self.tools
+                            .iter()
+                            .map(|tool| {
+                                info!("Testing tool {}", tool.name);
+                                trace!("Tool: {:?}", tool.runners[&test.tag]);
+
+                                tool.prepare(test)?;
+                                let timings: Vec<_> =
+                                    (0..1).map(|_| tool.run(test)).collect::<Result<_>>()?;
+                                tool.cleanup(test)?;
+
+                                Ok((tool.name.clone(), timings))
+                            })
+                            .collect::<Result<_>>()?,
+                    ))
+                })
+                .collect::<Result<_>>()?,
+        })
     }
 }
 
 #[derive(Debug)]
 pub struct BenchifyResults {
-    // test -> (executor -> timing)
-    results: HashMap<String, HashMap<String, std::time::Duration>>,
+    // test -> (executor -> [timing])
+    results: HashMap<String, HashMap<String, Vec<std::time::Duration>>>,
 }
 
 fn main() -> Result<()> {
