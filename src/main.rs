@@ -117,7 +117,7 @@ impl Test {
     pub fn interpolated_into_args(&self, args: &Args) -> Args {
         let mut res = vec![];
         for arg in args {
-            if arg == "{...}" {
+            if arg == "{...}" || arg == "..." {
                 res.append(&mut self.extra_args.clone());
             } else {
                 res.push(self.interpolated_into(arg));
