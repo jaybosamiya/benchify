@@ -136,7 +136,7 @@ pub struct BenchifyConfig {
 }
 
 impl BenchifyConfig {
-    fn confirm_config_sanity(&self) -> Result<()> {
+    fn confirm_config_sanity(&self) {
         let mut errored = false;
         if self.benchify_version != 1 {
             errored = true;
@@ -213,14 +213,12 @@ impl BenchifyConfig {
         }
 
         if errored {
-            Err(eyre!("Errors during early config tests"))
-        } else {
-            Ok(())
+            std::process::exit(1);
         }
     }
 
     pub fn execute(&self) -> Result<BenchifyResults> {
-        self.confirm_config_sanity()?;
+        self.confirm_config_sanity();
 
         Ok(BenchifyResults {
             results: self
