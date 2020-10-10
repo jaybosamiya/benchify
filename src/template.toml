@@ -66,13 +66,12 @@ run = ["{FILE}", "--", "{...}"]
 #
 #   - name: used for pretty printing results
 #   - tag: used to select the correct runner to be used for each tool
-#   - file: input file to the program
-#   - extra_args: useful for passing repeated arguments to tools
+#   - file: input file to the program (optional; only required if used by runner)
+#   - extra_args: useful for passing repeated arguments to tools (empty if omitted)
 [[tests]]
 name = "test1"
 tag = "tag1"
 file = "file1.txt"
-extra_args = []
 
 [[tests]]
 name = "test2"

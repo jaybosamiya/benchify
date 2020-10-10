@@ -33,6 +33,25 @@ pub struct Runner {
     cleanup: Option<ShellCommand>,
 }
 
+impl Runner {
+    pub fn needs_file(&self) -> bool {
+        if let Some(cmd) = &self.prepare {
+            if cmd.contains("{FILE}") {
+                return true;
+            }
+        }
+        if let Some(cmd) = &self.cleanup {
+            if cmd.contains("{FILE}") {
+                return true;
+            }
+        }
+        if self.run.iter().any(|a| a.contains("{FILE}")) {
+            return true;
+        }
+        false
+    }
+}
+
 pub type Tag = String;
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -110,24 +129,30 @@ impl Tool {
 pub struct Test {
     name: String,
     tag: Tag,
-    file: String,
-    extra_args: Vec<String>,
+    file: Option<String>,
+    extra_args: Option<Vec<String>>,
 }
 
 impl Test {
     pub fn interpolated_into(&self, s: &str) -> String {
-        s.replace("{NAME}", &self.name)
+        let extra_args = &self.extra_args.as_ref().unwrap_or(&vec![]).join(" ");
+        let s = s
+            .replace("{NAME}", &self.name)
             .replace("{TAG}", &self.tag)
-            .replace("{FILE}", &self.file)
-            .replace("\"{...}\"", &self.extra_args.join(" "))
-            .replace("'{...}'", &self.extra_args.join(" "))
+            .replace("\"{...}\"", &extra_args)
+            .replace("'{...}'", &extra_args);
+        if let Some(file) = &self.file {
+            s.replace("{FILE}", file)
+        } else {
+            s
+        }
     }
 
     pub fn interpolated_into_args(&self, args: &Args) -> Args {
         let mut res = vec![];
         for arg in args {
             if arg == "{...}" || arg == "..." {
-                res.append(&mut self.extra_args.clone());
+                res.append(&mut self.extra_args.as_ref().unwrap_or(&vec![]).clone());
             } else {
                 res.push(self.interpolated_into(arg));
             }
@@ -154,6 +179,8 @@ impl BenchifyConfig {
                 self.benchify_version
             )
         }
+
+        let mut tag_needs_file_due_to = HashMap::new();
 
         for tool in &self.tools {
             debug!("Confirming sanity for tool {}", tool.name);
@@ -197,6 +224,17 @@ impl BenchifyConfig {
                     tool.name, tool.install_instructions,
                 );
             }
+
+            trace!("Collecting tags that require files");
+            for tag in &self.tags {
+                let runner = &tool.runners[tag];
+                if runner.needs_file() {
+                    tag_needs_file_due_to
+                        .entry(tag)
+                        .or_insert(vec![])
+                        .push(&tool.name);
+                }
+            }
         }
 
         for test in &self.tests {
@@ -211,12 +249,20 @@ impl BenchifyConfig {
                 );
             }
 
-            trace!("Confirming file existence");
-            if !std::path::Path::new(&test.file).exists() {
+            if let Some(file) = &test.file {
+                trace!("Confirming file existence");
+                if !std::path::Path::new(file).exists() {
+                    errored = true;
+                    error!(
+                        "Could not find file {} for test {}. Are you sure it exists?",
+                        file, test.name
+                    );
+                }
+            } else if tag_needs_file_due_to.contains_key(&test.tag) {
                 errored = true;
                 error!(
-                    "Could not find file {} for test {}. Are you sure it exists?",
-                    test.file, test.name
+                    "Test {} needs a file specified due to runner(s): {:?}",
+                    test.name, tag_needs_file_due_to[&test.tag]
                 );
             }
         }
