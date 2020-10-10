@@ -1,0 +1,79 @@
+# Benchify version must be exactly the number 1. May be updated in
+# future versions of benchify, if the core schema of this TOML file is
+# changed.
+benchify_version = 1
+
+# List of tags to group types of ways to run each tool. If you want to
+# run each tool in exactly one way, use a single tag.
+tags = ["tag1", "tag2"]
+
+# Each tool starts with a `[[tools]]`, followed by attributes for each tool:
+#
+#   - name: used for pretty printing results
+#   - program: the executable binary (searched on PATH for execution)
+#   - existence_confirmation: arguments used to confirm that program is executable
+#                  (if empty, or not specified, directly tries to execute program)
+#   - install_instructions: used for convenient error messages when tool is not found
+#
+# These attributes are then followed by 1 or more runners. Each runner
+# corresponds to 1 and only 1 tag, and has the attributes:
+#
+#   - prepare: shell command to run before each test (if empty, ignored)
+#   - run: arguments to be used to the program for testing
+#   - cleanup: shell command to run at the end of benchmarks (if empty, ignored)
+#
+# The runner automatically provides interpolation of information from
+# the tests. This can be done by using any of the following strings to
+# perform their corresponding replacement at the time of execution:
+#
+#   - {NAME}: name of test
+#   - {TAG}: the runner's current tag
+#   - {FILE}: the test file
+#   - {...}: extra arguments provided by the test
+#
+# More interpolants may be added in future versions of Benchify.
+[[tools]]
+name = "tool1"
+program = "program1"
+existence_confirmation = ["--version"]
+install_instructions = "sudo apt install program1"
+
+[tools.runners.tag1]
+prepare = "cp {FILE} x"
+run = ["--optimize", "x"]
+cleanup = "rm x"
+
+[tools.runners.tag2]
+run = ["{FILE}", "--", "{...}"]
+
+[[tools]]
+name = "tool2"
+program = "program2"
+install_instructions = "cargo install program2"
+
+[tools.runners.tag1]
+prepare = "mkdir prog2_{TAG}"
+run = ["--arg", "{FILE}", "prog2_{TAG}/{FILE}.out"]
+cleanup = "rm -rf prog2_{TAG}"
+
+[tools.runners.tag2]
+run = ["{FILE}", "--", "{...}"]
+
+# Finally, each test to be run against each tool is specified via
+# `[[tests]]`.  These contain the attributes:
+#
+#   - name: used for pretty printing results
+#   - tag: used to select the correct runner to be used for each tool
+#   - file: input file to the program
+#   - extra_args: useful for passing repeated arguments to tools
+[[tests]]
+name = "test1"
+tag = "tag1"
+file = "file1.txt"
+extra_args = []
+
+[[tests]]
+name = "test2"
+tag = "tag2"
+file = "file2.csv"
+extra_args = ["x", "y"]
