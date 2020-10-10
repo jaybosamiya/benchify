@@ -21,6 +21,7 @@ tags = ["tag1", "tag2"]
 #   - prepare: shell command to run before each test (if empty, ignored)
 #   - run: arguments to be used to the program for testing
 #   - cleanup: shell command to run at the end of benchmarks (if empty, ignored)
+#   - warmup: number of runs before starting to benchmark (0 if not specified)
 #
 # The runner automatically provides interpolation of information from
 # the tests. This can be done by using any of the following strings to
@@ -42,6 +43,7 @@ install_instructions = "sudo apt install program1"
 prepare = "cp {FILE} x"
 run = ["--optimize", "x"]
 cleanup = "rm x"
+warmup = 3
 
 [tools.runners.tag2]
 run = ["{FILE}", "--", "{...}"]

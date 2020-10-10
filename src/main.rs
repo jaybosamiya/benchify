@@ -27,6 +27,7 @@ type ShellCommand = String;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Runner {
+    warmup: Option<u32>,
     prepare: Option<ShellCommand>,
     run: Args,
     cleanup: Option<ShellCommand>,
@@ -64,8 +65,16 @@ impl Tool {
     }
 
     pub fn prepare(&self, test: &Test) -> Result<()> {
-        if let Some(cmd) = &self.runners[&test.tag].prepare {
-            self.run_cmd("Preparation", test, cmd)
+        let runner = &self.runners[&test.tag];
+        if let Some(cmd) = &runner.prepare {
+            self.run_cmd("Preparation", test, cmd)?;
+            if let Some(warmup) = runner.warmup {
+                info!("Performing {} warmup runs", warmup);
+                for _ in 0..warmup {
+                    self.run(test)?;
+                }
+            }
+            Ok(())
         } else {
             Ok(())
         }
