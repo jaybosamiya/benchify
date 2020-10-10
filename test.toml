@@ -1,0 +1,35 @@
+benchify_version = 1
+tags = ["default"]
+
+[[tools]]
+name = "echo"
+program = "echo"
+install_instructions = "sudo apt install coreutils"
+[tools.runners.default]
+run = ["..."]
+
+[[tools]]
+name = "/usr/bin/echo"
+program = "/usr/bin/echo"
+install_instructions = "sudo apt install coreutils"
+[tools.runners.default]
+run = ["..."]
+
+[[tools]]
+name = "printf"
+program = "printf"
+install_instructions = "sudo apt install coreutils"
+[tools.runners.default]
+run = ["..."]
+
+[[tests]]
+name = "test1"
+tag = "default"
+file = "test.toml"
+extra_args = ["hi how are you?"]
+
+[[tests]]
+name = "test2"
+tag = "default"
+file = "test.toml"
+extra_args = ["fine thank you"]
