@@ -25,11 +25,9 @@ run = ["..."]
 [[tests]]
 name = "test1"
 tag = "default"
-file = "test.toml"
 extra_args = ["hi how are you?"]
 
 [[tests]]
 name = "test2"
 tag = "default"
-file = "test.toml"
 extra_args = ["fine thank you"]
