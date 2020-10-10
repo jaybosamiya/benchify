@@ -47,6 +47,7 @@ pub struct Test {
     tag: Tag,
     file: String,
     command: String,
+    pipe_in: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -121,6 +122,16 @@ impl BenchifyConfig {
                     "Could not find file {} for test {}. Are you sure it exists?",
                     test.file, test.name
                 );
+            }
+
+            if let Some(pipe_in) = &test.pipe_in {
+                trace!("Confirming pipe-in file existence");
+                if !std::path::Path::new(pipe_in).exists() {
+                    error!(
+                        "Could not find pipe-in file {} for test {}. Are you sure it exists?",
+                        pipe_in, test.name
+                    );
+                }
             }
         }
     }
