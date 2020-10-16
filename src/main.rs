@@ -164,6 +164,8 @@ impl Test {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct BenchifyConfig {
     warmup: Option<u32>,
+    min_runs: Option<u32>,
+    max_runs: Option<u32>,
     benchify_version: usize,
     tags: HashSet<Tag>,
     tools: Vec<Tool>,
@@ -171,6 +173,14 @@ pub struct BenchifyConfig {
 }
 
 impl BenchifyConfig {
+    fn min_runs(&self) -> u32 {
+        self.min_runs.unwrap_or(10)
+    }
+
+    fn max_runs(&self) -> u32 {
+        self.max_runs.unwrap_or(1000)
+    }
+
     fn confirm_config_sanity(&self) {
         let mut errored = false;
         if self.benchify_version != 1 {
@@ -178,6 +188,15 @@ impl BenchifyConfig {
             error!(
                 "Found config for version {}. Currently only version 1 is supported.",
                 self.benchify_version
+            )
+        }
+
+        if self.min_runs() > self.max_runs() {
+            errored = true;
+            error!(
+                "Min runs ({}) is greater than max runs ({}).",
+                self.min_runs(),
+                self.max_runs(),
             )
         }
 
@@ -274,9 +293,6 @@ impl BenchifyConfig {
     }
 
     fn get_timings(&self, test: &Test, tool: &Tool) -> Result<Vec<std::time::Duration>> {
-        let min_runs = 10;
-        let max_runs = 1000;
-
         let expected_time_seconds = 2.5f32;
 
         let initial_estimates = (0..2).map(|_| tool.run(test)).collect::<Result<Vec<_>>>()?;
@@ -287,11 +303,13 @@ impl BenchifyConfig {
             .sum::<f32>()
             / initial_estimates.len() as f32;
 
-        let preferred_number_of_iterations = max_runs.min(
-            min_runs.max((expected_time_seconds / mean_estimated_time_per_iter_secs) as usize),
+        let preferred_number_of_iterations = self.max_runs().min(
+            self.min_runs()
+                .max((expected_time_seconds / mean_estimated_time_per_iter_secs) as _),
         );
 
-        let remaining_iterations = (initial_estimates.len()..preferred_number_of_iterations)
+        let remaining_iterations = (initial_estimates.len()
+            ..preferred_number_of_iterations as usize)
             .map(|_| tool.run(test))
             .collect::<Result<Vec<_>>>()?;
 

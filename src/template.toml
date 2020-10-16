@@ -8,7 +8,16 @@ benchify_version = 1
 tags = ["tag1", "tag2"]
 
 # Number of runs before starting benchmark. (0 if not specified)
+#
 # warmup = 0
+
+# Minimum and maximum number of runs during the benchmark. (10 and
+# 1000 respectively if not specified). The actual number of runs is
+# automatically decided for each tool and test within these
+# parameters.
+#
+# min_runs = 10
+# max_runs = 1000
 
 # Each tool starts with a `[[tools]]`, followed by attributes for each tool:
 #
