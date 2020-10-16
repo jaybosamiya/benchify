@@ -294,7 +294,7 @@ impl BenchifyConfig {
     }
 
     fn get_timings(&self, test: &Test, tool: &Tool) -> Result<Vec<std::time::Duration>> {
-        let num_initial_estimates = 2usize;
+        let num_initial_estimates = self.max_runs().min(2) as usize;
 
         let expected_time_seconds = 2.5f32;
 
