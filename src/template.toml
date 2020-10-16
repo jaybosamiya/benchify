@@ -7,6 +7,9 @@ benchify_version = 1
 # run each tool in exactly one way, use a single tag.
 tags = ["tag1", "tag2"]
 
+# Number of runs before starting benchmark. (0 if not specified)
+# warmup = 0
+
 # Each tool starts with a `[[tools]]`, followed by attributes for each tool:
 #
 #   - name: used for pretty printing results
@@ -21,7 +24,7 @@ tags = ["tag1", "tag2"]
 #   - prepare: shell command to run before each test (if empty, ignored)
 #   - run: arguments to be used to the program for testing
 #   - cleanup: shell command to run at the end of benchmarks (if empty, ignored)
-#   - warmup: number of runs before starting to benchmark (0 if not specified)
+#   - warmup: number of runs before starting to benchmark (same as global if not specified)
 #
 # The runner automatically provides interpolation of information from
 # the tests. This can be done by using any of the following strings to

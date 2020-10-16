@@ -83,11 +83,11 @@ impl Tool {
         Ok(())
     }
 
-    pub fn prepare(&self, test: &Test) -> Result<()> {
+    pub fn prepare(&self, test: &Test, global_warmup: Option<u32>) -> Result<()> {
         let runner = &self.runners[&test.tag];
         if let Some(cmd) = &runner.prepare {
             self.run_cmd("Preparation", test, cmd)?;
-            if let Some(warmup) = runner.warmup {
+            if let Some(warmup) = runner.warmup.or(global_warmup) {
                 info!("Performing {} warmup runs", warmup);
                 for _ in 0..warmup {
                     self.run(test)?;
@@ -163,6 +163,7 @@ impl Test {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct BenchifyConfig {
+    warmup: Option<u32>,
     benchify_version: usize,
     tags: HashSet<Tag>,
     tools: Vec<Tool>,
@@ -291,7 +292,7 @@ impl BenchifyConfig {
                                 info!("Testing tool {}", tool.name);
                                 trace!("Tool: {:?}", tool.runners[&test.tag]);
 
-                                tool.prepare(test)?;
+                                tool.prepare(test, self.warmup)?;
                                 let timings: Vec<_> =
                                     (0..1).map(|_| tool.run(test)).collect::<Result<_>>()?;
                                 tool.cleanup(test)?;
