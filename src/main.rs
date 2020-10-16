@@ -273,6 +273,34 @@ impl BenchifyConfig {
         }
     }
 
+    fn get_timings(&self, test: &Test, tool: &Tool) -> Result<Vec<std::time::Duration>> {
+        let min_runs = 10;
+        let max_runs = 1000;
+
+        let expected_time_seconds = 2.5f32;
+
+        let initial_estimates = (0..2).map(|_| tool.run(test)).collect::<Result<Vec<_>>>()?;
+
+        let mean_estimated_time_per_iter_secs = initial_estimates
+            .iter()
+            .map(|t| t.as_secs_f32())
+            .sum::<f32>()
+            / initial_estimates.len() as f32;
+
+        let preferred_number_of_iterations = max_runs.min(
+            min_runs.max((expected_time_seconds / mean_estimated_time_per_iter_secs) as usize),
+        );
+
+        let remaining_iterations = (initial_estimates.len()..preferred_number_of_iterations)
+            .map(|_| tool.run(test))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(initial_estimates
+            .into_iter()
+            .chain(remaining_iterations.into_iter())
+            .collect())
+    }
+
     pub fn execute(&self) -> Result<BenchifyResults> {
         self.confirm_config_sanity();
 
@@ -293,8 +321,7 @@ impl BenchifyConfig {
                                 trace!("Tool: {:?}", tool.runners[&test.tag]);
 
                                 tool.prepare(test, self.warmup)?;
-                                let timings: Vec<_> =
-                                    (0..1).map(|_| tool.run(test)).collect::<Result<_>>()?;
+                                let timings = self.get_timings(test, tool)?;
                                 tool.cleanup(test)?;
 
                                 Ok((tool.name.clone(), timings))
