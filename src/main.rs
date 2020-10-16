@@ -2,6 +2,7 @@
 
 use clap::Clap;
 use color_eyre::eyre::{self, eyre, Result};
+use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, error, info, trace, warn}; // error >> warn >> info >> debug >> trace
 use serde::{Deserialize, Serialize};
 
@@ -293,25 +294,47 @@ impl BenchifyConfig {
     }
 
     fn get_timings(&self, test: &Test, tool: &Tool) -> Result<Vec<std::time::Duration>> {
+        let num_initial_estimates = 2usize;
+
         let expected_time_seconds = 2.5f32;
 
-        let initial_estimates = (0..2).map(|_| tool.run(test)).collect::<Result<Vec<_>>>()?;
+        let pb_style = ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed}] \
+                     [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+            )
+            .progress_chars("#>-");
+
+        let pb = ProgressBar::new(num_initial_estimates as u64);
+        pb.set_style(pb_style.clone());
+        let initial_estimates = (0..num_initial_estimates)
+            .map(|_| {
+                pb.inc(1);
+                tool.run(test)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        pb.finish_and_clear();
 
         let mean_estimated_time_per_iter_secs = initial_estimates
             .iter()
             .map(|t| t.as_secs_f32())
             .sum::<f32>()
-            / initial_estimates.len() as f32;
+            / num_initial_estimates as f32;
 
         let preferred_number_of_iterations = self.max_runs().min(
             self.min_runs()
                 .max((expected_time_seconds / mean_estimated_time_per_iter_secs) as _),
         );
 
-        let remaining_iterations = (initial_estimates.len()
-            ..preferred_number_of_iterations as usize)
-            .map(|_| tool.run(test))
+        let pb = ProgressBar::new(preferred_number_of_iterations as u64);
+        pb.set_style(pb_style);
+        let remaining_iterations = (num_initial_estimates..preferred_number_of_iterations as usize)
+            .map(|i| {
+                pb.set_position(i as u64);
+                tool.run(test)
+            })
             .collect::<Result<Vec<_>>>()?;
+        pb.finish_and_clear();
 
         Ok(initial_estimates
             .into_iter()
