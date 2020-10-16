@@ -9,11 +9,19 @@ install_instructions = "sudo apt install coreutils"
 run = ["..."]
 
 [[tools]]
-name = "/usr/bin/echo"
+name = "binecho"
 program = "/usr/bin/echo"
 install_instructions = "sudo apt install coreutils"
 [tools.runners.default]
 run = ["..."]
+
+
+[[tools]]
+name = "sleep"
+program = "sleep"
+install_instructions = "sudo apt install coreutils"
+[tools.runners.default]
+run = ["0.1"]
 
 [[tools]]
 name = "printf"

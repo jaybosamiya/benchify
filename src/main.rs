@@ -300,13 +300,17 @@ impl BenchifyConfig {
 
         let pb_style = ProgressStyle::default_bar()
             .template(
-                "{spinner:.green} [{elapsed}] \
-                     [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+                "{spinner:.green} {msg} \
+                     [{bar:40.cyan/blue}] {pos}/{len} ({elapsed} -- ETA {eta})",
             )
             .progress_chars("#>-");
 
         let pb = ProgressBar::new(num_initial_estimates as u64);
         pb.set_style(pb_style.clone());
+        pb.set_message(&format!(
+            "[{}] [{}]\tInitial estimates",
+            test.name, tool.name
+        ));
         let initial_estimates = (0..num_initial_estimates)
             .map(|_| {
                 pb.inc(1);
@@ -327,6 +331,7 @@ impl BenchifyConfig {
         );
 
         let pb = ProgressBar::new(preferred_number_of_iterations as u64);
+        pb.set_message(&format!("[{}] [{}]\tBenchmarking", test.name, tool.name));
         pb.set_style(pb_style);
         let remaining_iterations = (num_initial_estimates..preferred_number_of_iterations as usize)
             .map(|i| {
@@ -334,12 +339,22 @@ impl BenchifyConfig {
                 tool.run(test)
             })
             .collect::<Result<Vec<_>>>()?;
-        pb.finish_and_clear();
 
-        Ok(initial_estimates
+        let timings: Vec<_> = initial_estimates
             .into_iter()
             .chain(remaining_iterations.into_iter())
-            .collect())
+            .collect();
+        let mean_timing = timings.iter().sum::<std::time::Duration>() / (timings.len() as u32);
+        pb.set_style(ProgressStyle::default_bar().template("{spinner:.green} {msg}"));
+        pb.finish_with_message(&format!(
+            "[{}] [{}]\tMean {:?} in {} runs",
+            test.name,
+            tool.name,
+            mean_timing,
+            timings.len()
+        ));
+
+        Ok(timings)
     }
 
     pub fn execute(&self) -> Result<BenchifyResults> {
