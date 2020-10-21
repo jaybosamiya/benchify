@@ -383,32 +383,27 @@ impl BenchifyConfig {
                     info!("Running tests for {}", test.name);
                     debug!("Test: {:?}", test);
 
-                    Ok((
-                        test.name.as_ref(),
-                        self.tools
-                            .iter()
-                            .map(|tool| {
-                                info!("Testing tool {}", tool.name);
-                                trace!("Tool: {:?}", tool.runners[&test.tag]);
+                    self.tools.iter().map(move |tool| {
+                        info!("Testing tool {}", tool.name);
+                        trace!("Tool: {:?}", tool.runners[&test.tag]);
 
-                                tool.prepare(test, self.warmup)?;
-                                let timings = self.get_timings(test, tool)?;
-                                tool.cleanup(test)?;
+                        tool.prepare(test, self.warmup)?;
+                        let timings = self.get_timings(test, tool)?;
+                        tool.cleanup(test)?;
 
-                                Ok((tool.name.as_ref(), timings))
-                            })
-                            .collect::<Result<_>>()?,
-                    ))
+                        Ok((test.name.as_ref(), tool.name.as_ref(), timings))
+                    })
                 })
-                .collect::<Result<_>>()?,
+                .flatten()
+                .collect::<Result<Vec<_>>>()?,
         })
     }
 }
 
 #[derive(Debug)]
 pub struct BenchifyResults<'a> {
-    // test -> (executor -> [timing])
-    results: Vec<(&'a str, Vec<(&'a str, Vec<std::time::Duration>)>)>,
+    // (test, executor, [timing])
+    results: Vec<(&'a str, &'a str, Vec<std::time::Duration>)>,
 }
 
 impl<'a> BenchifyResults<'a> {
@@ -421,11 +416,9 @@ impl<'a> BenchifyResults<'a> {
             // Write out all the data
             let mut data_writer = csv::Writer::from_path(results_dir.join("data.csv"))?;
             data_writer.write_record(&["Test", "Executor", "Timing (s)"])?;
-            for (test, test_data) in self.results.iter() {
-                for (executor, timings) in test_data.iter() {
-                    for timing in timings.iter() {
-                        data_writer.serialize((test, executor, timing.as_secs_f64()))?;
-                    }
+            for (test, executor, timings) in self.results.iter() {
+                for timing in timings.iter() {
+                    data_writer.serialize((test, executor, timing.as_secs_f64()))?;
                 }
             }
             data_writer.flush()?;
