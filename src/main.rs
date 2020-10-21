@@ -411,6 +411,36 @@ pub struct BenchifyResults {
     results: HashMap<String, HashMap<String, Vec<std::time::Duration>>>,
 }
 
+impl BenchifyResults {
+    fn save_to_directory(&self, results_dir: &Path) -> Result<()> {
+        // Make sure the results directory exists
+        std::fs::create_dir_all(results_dir)?;
+        assert!(results_dir.is_dir());
+
+        {
+            // Write out all the data
+            let mut data_writer = csv::Writer::from_path(results_dir.join("data.csv"))?;
+            data_writer.write_record(&["Test", "Executor", "Timing (s)"])?;
+            for (test, test_data) in self.results.iter() {
+                for (executor, timings) in test_data.iter() {
+                    for timing in timings.iter() {
+                        data_writer.serialize((test, executor, timing.as_secs_f64()))?;
+                    }
+                }
+            }
+            data_writer.flush()?;
+        }
+
+        error!("TODO save_to_dir");
+        Ok(())
+    }
+
+    fn display_summary(&self) -> Result<()> {
+        error!("TODO display_summary");
+        Ok(())
+    }
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
     pretty_env_logger::init();
@@ -431,7 +461,8 @@ fn main() -> Result<()> {
     )?;
 
     let results = config.execute()?;
-    // println!("{:?}", results);
+    results.save_to_directory(&config.results_dir())?;
+    results.display_summary()?;
 
     Ok(())
 }
