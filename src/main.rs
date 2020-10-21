@@ -384,7 +384,7 @@ impl BenchifyConfig {
                     debug!("Test: {:?}", test);
 
                     Ok((
-                        test.name.clone(),
+                        test.name.as_ref(),
                         self.tools
                             .iter()
                             .map(|tool| {
@@ -395,7 +395,7 @@ impl BenchifyConfig {
                                 let timings = self.get_timings(test, tool)?;
                                 tool.cleanup(test)?;
 
-                                Ok((tool.name.clone(), timings))
+                                Ok((tool.name.as_ref(), timings))
                             })
                             .collect::<Result<_>>()?,
                     ))
@@ -406,12 +406,12 @@ impl BenchifyConfig {
 }
 
 #[derive(Debug)]
-pub struct BenchifyResults {
+pub struct BenchifyResults<'a> {
     // test -> (executor -> [timing])
-    results: HashMap<String, HashMap<String, Vec<std::time::Duration>>>,
+    results: Vec<(&'a str, Vec<(&'a str, Vec<std::time::Duration>)>)>,
 }
 
-impl BenchifyResults {
+impl<'a> BenchifyResults<'a> {
     fn save_to_directory(&self, results_dir: &Path) -> Result<()> {
         // Make sure the results directory exists
         std::fs::create_dir_all(results_dir)?;
