@@ -7,7 +7,7 @@ use log::{debug, error, info, trace, warn}; // error >> warn >> info >> debug >>
 use serde::{Deserialize, Serialize};
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const PROGRAM_NAME: &'static str = env!("CARGO_PKG_NAME", "expected to be built with cargo");
 const PROGRAM_VERSION: &'static str = env!("CARGO_PKG_VERSION", "expected to be built with cargo");
@@ -164,10 +164,11 @@ impl Test {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct BenchifyConfig {
+    benchify_version: usize,
     warmup: Option<u32>,
     min_runs: Option<u32>,
     max_runs: Option<u32>,
-    benchify_version: usize,
+    results_dir: Option<PathBuf>,
     tags: HashSet<Tag>,
     tools: Vec<Tool>,
     tests: Vec<Test>,
@@ -180,6 +181,12 @@ impl BenchifyConfig {
 
     fn max_runs(&self) -> u32 {
         self.max_runs.unwrap_or(1000)
+    }
+
+    fn results_dir(&self) -> PathBuf {
+        self.results_dir
+            .clone()
+            .unwrap_or(PathBuf::from("./benchify-results/"))
     }
 
     fn confirm_config_sanity(&self) {
@@ -198,6 +205,14 @@ impl BenchifyConfig {
                 "Min runs ({}) is greater than max runs ({}).",
                 self.min_runs(),
                 self.max_runs(),
+            )
+        }
+
+        if self.results_dir().is_file() {
+            errored = true;
+            error!(
+                "Results dir {:?} is already exists as a file.",
+                self.results_dir()
             )
         }
 

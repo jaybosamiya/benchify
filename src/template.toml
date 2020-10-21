@@ -17,6 +17,9 @@ tags = ["tag1", "tag2"]
 # min_runs = 10
 # max_runs = 1000
 
+## Path to results directory (if unspecified, ./benchify-results/)
+# results_dir = "./benchify-results/"
+
 ## Each tool starts with a `[[tools]]`, followed by attributes for each tool:
 ##
 ##   - name: used for pretty printing results
