@@ -301,14 +301,14 @@ impl BenchifyConfig {
         let pb_style = ProgressStyle::default_bar()
             .template(
                 "{spinner:.green} {msg} \
-                     [{bar:40.cyan/blue}] {pos}/{len} ({elapsed} -- ETA {eta})",
+                     [{wide_bar:.cyan/blue}] {pos}/{len} ({elapsed} -- ETA {eta})",
             )
             .progress_chars("#>-");
 
         let pb = ProgressBar::new(num_initial_estimates as u64);
         pb.set_style(pb_style.clone());
         pb.set_message(&format!(
-            "[{}] [{}]\tInitial estimates",
+            "[{}] [{}] Initial estimates",
             test.name, tool.name
         ));
         let initial_estimates = (0..num_initial_estimates)
@@ -331,7 +331,7 @@ impl BenchifyConfig {
         );
 
         let pb = ProgressBar::new(preferred_number_of_iterations as u64);
-        pb.set_message(&format!("[{}] [{}]\tBenchmarking", test.name, tool.name));
+        pb.set_message(&format!("[{}] [{}] Benchmarking", test.name, tool.name));
         pb.set_style(pb_style);
         let remaining_iterations = (num_initial_estimates..preferred_number_of_iterations as usize)
             .map(|i| {
@@ -416,7 +416,7 @@ fn main() -> Result<()> {
     )?;
 
     let results = config.execute()?;
-    println!("{:?}", results);
+    // println!("{:?}", results);
 
     Ok(())
 }
