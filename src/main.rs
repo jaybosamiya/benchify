@@ -420,6 +420,7 @@ impl<'a> BenchifyResults<'a> {
                 for timing in timings.iter() {
                     data_writer.serialize((test, executor, timing.as_secs_f64()))?;
                 }
+                println!("{}\t{}\t{:?}", test, executor, Statistics::new(&timings),);
             }
             data_writer.flush()?;
         }
@@ -431,6 +432,42 @@ impl<'a> BenchifyResults<'a> {
     fn display_summary(&self) -> Result<()> {
         error!("TODO display_summary");
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct Statistics {
+    mean: std::time::Duration,
+    sample_stddev: std::time::Duration,
+    min: std::time::Duration,
+    max: std::time::Duration,
+    count: usize,
+}
+
+impl Statistics {
+    fn new(data: &[std::time::Duration]) -> Self {
+        use std::cmp::{max, min};
+        use std::iter::Sum;
+
+        let count = data.len();
+        assert_ne!(count, 0);
+        let mean = std::time::Duration::sum(data.iter()) / (count as u32);
+        let sample_variance = (data
+            .iter()
+            .map(|t| (t.as_secs_f64() - mean.as_secs_f64()).powf(2.))
+            .sum::<f64>())
+            / ((data.len() - 1) as f64).powf(2.);
+        let sample_stddev = std::time::Duration::from_secs_f64(sample_variance.sqrt());
+        let min = *data.iter().min().unwrap();
+        let max = *data.iter().max().unwrap();
+
+        Statistics {
+            mean,
+            sample_stddev,
+            min,
+            max,
+            count,
+        }
     }
 }
 
