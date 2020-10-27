@@ -77,21 +77,43 @@ pub struct Tool {
 
 impl Tool {
     fn run_cmd(&self, cmdtype: &str, test: &Test, cmd: &ShellCommand) -> Result<()> {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner().template("{spinner:.green} {msg} ({elapsed_precise})"),
+        );
+        pb.set_message(&format!("[{}] [{}] {}", test.name, self.name, cmdtype));
+
         trace!("{} of tool {} for {}", cmdtype, self.name, &test.tag);
         let cmd = test.interpolated_into(cmd);
         trace!("Running `{}`", cmd);
-        let output = std::process::Command::new("sh")
+        let mut process = std::process::Command::new("sh")
             .arg("-c")
             .arg(cmd)
-            .output()?;
-        if output.status.success() {
-            trace!("{} generated output\n{:?}", cmdtype, output);
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        let status = loop {
+            match process.try_wait()? {
+                None => {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    pb.tick();
+                }
+                Some(status) => {
+                    break status;
+                }
+            }
+        };
+        if status.success() {
+            trace!("{} exited successfully", cmdtype);
         } else {
             error!(
                 "{} of {} for {} failed with status code {}",
-                cmdtype, self.name, test.tag, output.status
+                cmdtype, self.name, test.tag, status
             )
         }
+        pb.finish_and_clear();
+
         Ok(())
     }
 
