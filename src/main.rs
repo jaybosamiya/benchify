@@ -425,8 +425,52 @@ impl<'a> BenchifyResults<'a> {
             data_writer.flush()?;
         }
 
-        error!("TODO save_to_dir");
+        for (test, results) in self.results_by_test() {
+            // Write out data for each test
+            use std::io::Write;
+
+            let mut file = std::fs::File::create(results_dir.join(format!("summary_{}.md", test)))?;
+            writeln!(file, "# Summary of runs for {}\n", test)?;
+            writeln!(file)?;
+            writeln!(file, "| Executor | Mean ± StdDev (ms) | Ratio |")?;
+            writeln!(file, "|:---------|-------------------:|------:|")?;
+            let summaries = results
+                .iter()
+                .map(|(executor, timings)| (executor, Statistics::new(timings)));
+            let comparison_point = summaries.clone().min_by_key(|(_e, s)| s.mean).unwrap();
+            for (executor, stats) in summaries {
+                writeln!(
+                    file,
+                    "| {:<8} | {:>9.3} ± {:>6.3} | {:>5.3} |",
+                    executor,
+                    stats.mean.as_secs_f64() * 1000.,
+                    stats.sample_stddev.as_secs_f64() * 1000.,
+                    stats.mean.as_secs_f64() / comparison_point.1.mean.as_secs_f64(),
+                )?;
+            }
+        }
+
         Ok(())
+    }
+
+    fn results_by_test(&self) -> Vec<(&'a str, Vec<(&'a str, &[std::time::Duration])>)> {
+        let mut res = HashMap::new();
+        for (test, executor, timings) in self.results.iter() {
+            res.entry(*test)
+                .or_insert(vec![])
+                .push((*executor, timings.as_ref()));
+        }
+        res.into_iter().collect()
+    }
+
+    fn results_by_executor(&self) -> Vec<(&'a str, Vec<(&'a str, &[std::time::Duration])>)> {
+        let mut res = HashMap::new();
+        for (test, executor, timings) in self.results.iter() {
+            res.entry(*executor)
+                .or_insert(vec![])
+                .push((*test, timings.as_ref()));
+        }
+        res.into_iter().collect()
     }
 
     fn display_summary(&self) -> Result<()> {
