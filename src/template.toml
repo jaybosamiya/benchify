@@ -88,6 +88,7 @@ run_cmd = "program2 {FILE} -- {...}"
 ##   - tag: used to select the correct runner to be used for each tool
 ##   - file: input file to the program (optional; only required if used by runner)
 ##   - extra_args: useful for passing repeated arguments to tools (empty if omitted)
+##   - stdin_from_cmd: useful if runner expects stdin. Will be piped.
 [[tests]]
 name = "test1"
 tag = "tag1"
@@ -98,3 +99,4 @@ name = "test2"
 tag = "tag2"
 file = "file2.csv"
 extra_args = ["x", "y"]
+stdin_from_cmd = "cat foobar"

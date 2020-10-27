@@ -112,21 +112,36 @@ impl Tool {
     }
 
     pub fn run(&self, test: &Test) -> Result<std::time::Duration> {
-        let (timer, output) = if let Some(run_args) = &self.runners[&test.tag].run_args {
+        let stdin = if let Some(cmd) = &test.stdin_from_cmd {
+            use std::os::unix::io::{AsRawFd, FromRawFd};
+            let cmd = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(test.interpolated_into(cmd))
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()?;
+            cmd.stdout.unwrap().into()
+        } else {
+            std::process::Stdio::null()
+        };
+        let runner = &self.runners[&test.tag];
+        let (timer, output) = if let Some(run_args) = &runner.run_args {
             let args = test.interpolated_into_args(run_args);
             trace!("Running {} with args {:?}", self.program, args);
             let timer = std::time::Instant::now();
             let output = std::process::Command::new(&self.program)
                 .args(args)
+                .stdin(stdin)
                 .output()?;
             (timer, output)
-        } else if let Some(run_cmd) = &self.runners[&test.tag].run_cmd {
+        } else if let Some(run_cmd) = &runner.run_cmd {
             let cmd = test.interpolated_into(run_cmd);
             trace!("Running {} with shell command {:?}", self.program, cmd);
             let timer = std::time::Instant::now();
             let output = std::process::Command::new("sh")
                 .arg("-c")
                 .arg(cmd)
+                .stdin(stdin)
                 .output()?;
             (timer, output)
         } else {
@@ -157,6 +172,7 @@ pub struct Test {
     tag: Tag,
     file: Option<String>,
     extra_args: Option<Vec<String>>,
+    stdin_from_cmd: Option<String>,
 }
 
 impl Test {
