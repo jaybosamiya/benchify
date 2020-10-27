@@ -530,23 +530,37 @@ impl<'a> BenchifyResults<'a> {
     }
 
     fn results_by_test(&self) -> Vec<(&'a str, Vec<(&'a str, &[std::time::Duration])>)> {
-        let mut res = HashMap::new();
+        let mut mapped = HashMap::new();
         for (test, executor, timings) in self.results.iter() {
-            res.entry(*test)
+            mapped
+                .entry(*test)
                 .or_insert(vec![])
                 .push((*executor, timings.as_ref()));
         }
-        res.into_iter().collect()
+        let mut res = vec![];
+        for (test, _executor, _timings) in self.results.iter() {
+            if let Some((k, v)) = mapped.remove_entry(test) {
+                res.push((k, v));
+            }
+        }
+        res
     }
 
     fn results_by_executor(&self) -> Vec<(&'a str, Vec<(&'a str, &[std::time::Duration])>)> {
-        let mut res = HashMap::new();
+        let mut mapped = HashMap::new();
         for (test, executor, timings) in self.results.iter() {
-            res.entry(*executor)
+            mapped
+                .entry(*executor)
                 .or_insert(vec![])
                 .push((*test, timings.as_ref()));
         }
-        res.into_iter().collect()
+        let mut res = vec![];
+        for (_test, executor, _timings) in self.results.iter() {
+            if let Some((k, v)) = mapped.remove_entry(executor) {
+                res.push((k, v));
+            }
+        }
+        res
     }
 
     fn display_summary(&self) -> Result<()> {
