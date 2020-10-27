@@ -420,6 +420,85 @@ pub struct BenchifyResults<'a> {
     main_tool: Option<&'a str>,
 }
 
+fn format_summary(
+    main: Option<&str>,
+    results: Vec<(&str, &[std::time::Duration])>,
+) -> Result<String> {
+    use std::fmt::Write;
+
+    let mut result = String::new();
+    let summaries = results.iter().map(|(n, t)| (n, Statistics::new(t)));
+    let comparison_point = if let Some(main) = main {
+        summaries.clone().find(|(t, _s)| *t == &main).unwrap()
+    } else {
+        summaries.clone().min_by_key(|(_t, s)| s.mean).unwrap()
+    };
+    let summaries = summaries.map(|(n, stats)| {
+        let name = if comparison_point.0 == n {
+            format!("**{}**", n)
+        } else {
+            n.to_string()
+        };
+        let mean = format!("{:.3}", stats.mean.as_secs_f64() * 1000.);
+        let stddev = format!("{:.3}", stats.sample_stddev.as_secs_f64() * 1000.);
+        let ratio = format!(
+            "{:.3}",
+            stats.mean.as_secs_f64() / comparison_point.1.mean.as_secs_f64()
+        );
+        (name, mean, stddev, ratio)
+    });
+    let lengths = summaries
+        .clone()
+        .chain(std::iter::once((
+            "".to_string(),
+            "Mean (ms)".to_string(),
+            "StdDev (ms)".to_string(),
+            "Ratio".to_string(),
+        )))
+        .map(|(t, m, s, r)| (t.len(), m.len(), s.len(), r.len()));
+    let name_length = lengths.clone().map(|l| l.0).max().unwrap();
+    let mean_length = lengths.clone().map(|l| l.1).max().unwrap();
+    let stddev_length = lengths.clone().map(|l| l.2).max().unwrap();
+    let ratio_length = lengths.clone().map(|l| l.3).max().unwrap();
+
+    writeln!(
+        &mut result,
+        "| {n: <nl$} | {m: <ml$} ± {s: <sl$} | {r: <rl$} |",
+        nl = name_length,
+        n = "",
+        ml = mean_length,
+        m = "Mean (ms)",
+        sl = stddev_length,
+        s = "StdDev (ms)",
+        rl = ratio_length,
+        r = "Ratio",
+    )?;
+    writeln!(
+        &mut result,
+        "|:{dash:-<nl$}-|-{dash:-<ml$}---{dash:-<sl$}:|-{dash:-<rl$}:|",
+        dash = "-",
+        nl = name_length,
+        ml = mean_length,
+        sl = stddev_length,
+        rl = ratio_length,
+    )?;
+    for (name, mean, stddev, ratio) in summaries {
+        writeln!(
+            &mut result,
+            "| {n: <nl$} | {m: >ml$} ± {s: >sl$} | {r: >rl$} |",
+            nl = name_length,
+            n = name,
+            ml = mean_length,
+            m = mean,
+            sl = stddev_length,
+            s = stddev,
+            rl = ratio_length,
+            r = ratio,
+        )?;
+    }
+    Ok(result)
+}
+
 impl<'a> BenchifyResults<'a> {
     fn save_to_directory(&self, results_dir: &Path) -> Result<()> {
         // Make sure the results directory exists
@@ -443,81 +522,9 @@ impl<'a> BenchifyResults<'a> {
             // Write out data for each test
             use std::io::Write;
             let mut file = std::fs::File::create(results_dir.join(format!("summary_{}.md", test)))?;
-
-            let summaries = results
-                .iter()
-                .map(|(executor, timings)| (executor, Statistics::new(timings)));
-            let comparison_point = if let Some(tool) = self.main_tool {
-                summaries.clone().find(|(e, _s)| *e == &tool).unwrap()
-            } else {
-                summaries.clone().min_by_key(|(_e, s)| s.mean).unwrap()
-            };
-            let summaries = summaries.map(|(executor, stats)| {
-                let tool = if comparison_point.0 == executor {
-                    format!("**{}**", executor)
-                } else {
-                    executor.to_string()
-                };
-                let mean = format!("{:.3}", stats.mean.as_secs_f64() * 1000.);
-                let stddev = format!("{:.3}", stats.sample_stddev.as_secs_f64() * 1000.);
-                let ratio = format!(
-                    "{:.3}",
-                    stats.mean.as_secs_f64() / comparison_point.1.mean.as_secs_f64()
-                );
-                (tool, mean, stddev, ratio)
-            });
-            let lengths = summaries
-                .clone()
-                .chain(std::iter::once((
-                    "Tool".to_string(),
-                    "Mean (ms)".to_string(),
-                    "StdDev (ms)".to_string(),
-                    "Ratio".to_string(),
-                )))
-                .map(|(t, m, s, r)| (t.len(), m.len(), s.len(), r.len()));
-            let tool_length = lengths.clone().map(|l| l.0).max().unwrap();
-            let mean_length = lengths.clone().map(|l| l.1).max().unwrap();
-            let stddev_length = lengths.clone().map(|l| l.2).max().unwrap();
-            let ratio_length = lengths.clone().map(|l| l.3).max().unwrap();
-
             writeln!(file, "# Summary of runs for {}\n", test)?;
             writeln!(file)?;
-            writeln!(
-                file,
-                "| {t: <tl$} | {m: <ml$} ± {s: <sl$} | {r: <rl$} |",
-                tl = tool_length,
-                t = "Tool",
-                ml = mean_length,
-                m = "Mean (ms)",
-                sl = stddev_length,
-                s = "StdDev (ms)",
-                rl = ratio_length,
-                r = "Ratio",
-            )?;
-            writeln!(
-                file,
-                "|:{dash:-<tl$}-|-{dash:-<ml$}---{dash:-<sl$}:|-{dash:-<rl$}:|",
-                dash = "-",
-                tl = tool_length,
-                ml = mean_length,
-                sl = stddev_length,
-                rl = ratio_length,
-            )?;
-            for (tool, mean, stddev, ratio) in summaries {
-                writeln!(
-                    file,
-                    "| {t: <tl$} | {m: >ml$} ± {s: >sl$} | {r: >rl$} |",
-                    tl = tool_length,
-                    t = tool,
-                    ml = mean_length,
-                    m = mean,
-                    sl = stddev_length,
-                    s = stddev,
-                    rl = ratio_length,
-                    r = ratio,
-                )?;
-            }
-            file.flush()?;
+            write!(file, "{}", format_summary(self.main_tool, results)?)?;
         }
 
         Ok(())
