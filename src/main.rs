@@ -33,7 +33,8 @@ type ShellCommand = String;
 pub struct Runner {
     warmup: Option<u32>,
     prepare: Option<ShellCommand>,
-    run: Args,
+    run_args: Option<Args>,
+    run_cmd: Option<ShellCommand>,
     cleanup: Option<ShellCommand>,
 }
 
@@ -49,8 +50,15 @@ impl Runner {
                 return true;
             }
         }
-        if self.run.iter().any(|a| a.contains("{FILE}")) {
-            return true;
+        if let Some(run_args) = &self.run_args {
+            if run_args.iter().any(|a| a.contains("{FILE}")) {
+                return true;
+            }
+        }
+        if let Some(run_cmd) = &self.run_cmd {
+            if run_cmd.contains("{FILE}") {
+                return true;
+            }
         }
         false
     }
@@ -104,12 +112,26 @@ impl Tool {
     }
 
     pub fn run(&self, test: &Test) -> Result<std::time::Duration> {
-        let args = test.interpolated_into_args(&self.runners[&test.tag].run);
-        trace!("Running {} with args {:?}", self.program, args);
-        let timer = std::time::Instant::now();
-        let output = std::process::Command::new(&self.program)
-            .args(args)
-            .output()?;
+        let (timer, output) = if let Some(run_args) = &self.runners[&test.tag].run_args {
+            let args = test.interpolated_into_args(run_args);
+            trace!("Running {} with args {:?}", self.program, args);
+            let timer = std::time::Instant::now();
+            let output = std::process::Command::new(&self.program)
+                .args(args)
+                .output()?;
+            (timer, output)
+        } else if let Some(run_cmd) = &self.runners[&test.tag].run_cmd {
+            let cmd = test.interpolated_into(run_cmd);
+            trace!("Running {} with shell command {:?}", self.program, cmd);
+            let timer = std::time::Instant::now();
+            let output = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(cmd)
+                .output()?;
+            (timer, output)
+        } else {
+            unreachable!()
+        };
         let elapsed_time = timer.elapsed();
         if output.status.success() {
             trace!("Generated output\n{:?}", output);
@@ -235,6 +257,18 @@ impl BenchifyConfig {
 
         for tool in &self.tools {
             debug!("Confirming sanity for tool {}", tool.name);
+
+            trace!("Confirmer runner commands");
+            for (tag, runner) in &tool.runners {
+                if !(runner.run_cmd.is_some() ^ runner.run_args.is_some()) {
+                    errored = true;
+                    error!(
+                        "Runner {:?} for {:?} should have only one of run_cmd and run_args set. \
+                         Got {:?} and {:?} respectively.",
+                        tag, tool.name, runner.run_cmd, runner.run_args
+                    );
+                }
+            }
 
             trace!("Confirming tags");
             let tool_tags = tool.runners.keys().cloned().collect();

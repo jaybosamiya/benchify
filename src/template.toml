@@ -36,9 +36,12 @@ tags = ["tag1", "tag2"]
 ## corresponds to 1 and only 1 tag, and has the attributes:
 ##
 ##   - prepare: shell command to run before each test (if empty, ignored)
-##   - run: arguments to be used to the program for testing
+##   - run_args: arguments to be used to the program for testing (optional)
+##   - run_cmd: shell command to be used for testing (optional)
 ##   - cleanup: shell command to run at the end of benchmarks (if empty, ignored)
 ##   - warmup: number of runs before starting to benchmark (same as global if not specified)
+##
+## Note that exactly one of run_args and run_cmd must be set
 ##
 ## The runner automatically provides interpolation of information from
 ## the tests. This can be done by using any of the following strings to
@@ -58,12 +61,12 @@ install_instructions = "sudo apt install program1"
 
 [tools.runners.tag1]
 prepare = "cp {FILE} x"
-run = ["--optimize", "x"]
+run_args = ["--optimize", "x"]
 cleanup = "rm x"
 warmup = 3
 
 [tools.runners.tag2]
-run = ["{FILE}", "--", "{...}"]
+run_cmd = "program1 {FILE} -- {...}"
 
 [[tools]]
 name = "tool2"
@@ -72,11 +75,11 @@ install_instructions = "cargo install program2"
 
 [tools.runners.tag1]
 prepare = "mkdir prog2_{TAG}"
-run = ["--arg", "{FILE}", "prog2_{TAG}/{FILE}.out"]
+run_args = ["--arg", "{FILE}", "prog2_{TAG}/{FILE}.out"]
 cleanup = "rm -rf prog2_{TAG}"
 
 [tools.runners.tag2]
-run = ["{FILE}", "--", "{...}"]
+run_cmd = "program2 {FILE} -- {...}"
 
 ## Finally, each test to be run against each tool is specified via
 ## `[[tests]]`.  These contain the attributes:

@@ -7,14 +7,14 @@ name = "echo"
 program = "echo"
 install_instructions = "sudo apt install coreutils"
 [tools.runners.default]
-run = ["..."]
+run_args = ["..."]
 
 [[tools]]
 name = "binecho"
 program = "/usr/bin/echo"
 install_instructions = "sudo apt install coreutils"
 [tools.runners.default]
-run = ["..."]
+run_args = ["..."]
 
 
 [[tools]]
@@ -22,14 +22,14 @@ name = "sleep"
 program = "sleep"
 install_instructions = "sudo apt install coreutils"
 [tools.runners.default]
-run = ["0.1"]
+run_args = ["0.1"]
 
 [[tools]]
 name = "printf"
 program = "printf"
 install_instructions = "sudo apt install coreutils"
 [tools.runners.default]
-run = ["..."]
+run_args = ["..."]
 
 [[tests]]
 name = "test1"
