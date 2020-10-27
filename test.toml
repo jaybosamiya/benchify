@@ -1,5 +1,6 @@
 benchify_version = 1
 tags = ["default"]
+main_tool = "echo"
 
 [[tools]]
 name = "echo"

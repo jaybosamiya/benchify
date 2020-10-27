@@ -168,6 +168,7 @@ pub struct BenchifyConfig {
     warmup: Option<u32>,
     min_runs: Option<u32>,
     max_runs: Option<u32>,
+    main_tool: Option<String>,
     results_dir: Option<PathBuf>,
     tags: HashSet<Tag>,
     tools: Vec<Tool>,
@@ -214,6 +215,17 @@ impl BenchifyConfig {
                 "Results dir {:?} is already exists as a file.",
                 self.results_dir()
             )
+        }
+
+        if let Some(tool) = &self.main_tool {
+            if !self.tools.iter().any(|t| &t.name == tool) {
+                errored = true;
+                error!(
+                    "Main tool {:?} is not on of the known tools. Expected one of {:?}",
+                    tool,
+                    self.tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+                )
+            }
         }
 
         let mut tag_needs_file_due_to = HashMap::new();
@@ -396,6 +408,7 @@ impl BenchifyConfig {
                 })
                 .flatten()
                 .collect::<Result<Vec<_>>>()?,
+            main_tool: self.main_tool.as_ref().map(String::as_ref),
         })
     }
 }
@@ -404,6 +417,7 @@ impl BenchifyConfig {
 pub struct BenchifyResults<'a> {
     // (test, executor, [timing])
     results: Vec<(&'a str, &'a str, Vec<std::time::Duration>)>,
+    main_tool: Option<&'a str>,
 }
 
 impl<'a> BenchifyResults<'a> {
@@ -430,24 +444,35 @@ impl<'a> BenchifyResults<'a> {
             use std::io::Write;
 
             let mut file = std::fs::File::create(results_dir.join(format!("summary_{}.md", test)))?;
+            // TODO: Automatic formatting of the markdown file
             writeln!(file, "# Summary of runs for {}\n", test)?;
             writeln!(file)?;
-            writeln!(file, "| Executor | Mean ± StdDev (ms) | Ratio |")?;
+            writeln!(file, "| Tool     | Mean ± StdDev (ms) | Ratio |")?;
             writeln!(file, "|:---------|-------------------:|------:|")?;
             let summaries = results
                 .iter()
                 .map(|(executor, timings)| (executor, Statistics::new(timings)));
-            let comparison_point = summaries.clone().min_by_key(|(_e, s)| s.mean).unwrap();
-            for (executor, stats) in summaries {
+            let comparison_point = if let Some(tool) = self.main_tool {
+                summaries.clone().find(|(e, _s)| *e == &tool).unwrap()
+            } else {
+                summaries.clone().min_by_key(|(_e, s)| s.mean).unwrap()
+            };
+            for (&executor, stats) in summaries {
+                let tool = if *comparison_point.0 == executor {
+                    format!("**{}**", executor)
+                } else {
+                    executor.to_string()
+                };
                 writeln!(
                     file,
                     "| {:<8} | {:>9.3} ± {:>6.3} | {:>5.3} |",
-                    executor,
+                    tool,
                     stats.mean.as_secs_f64() * 1000.,
                     stats.sample_stddev.as_secs_f64() * 1000.,
                     stats.mean.as_secs_f64() / comparison_point.1.mean.as_secs_f64(),
                 )?;
             }
+            file.flush()?;
         }
 
         Ok(())

@@ -20,6 +20,10 @@ tags = ["tag1", "tag2"]
 ## Path to results directory (if unspecified, ./benchify-results/)
 # results_dir = "./benchify-results/"
 
+## Main tool to perform comparisons against, for displaying summaries.
+## If unspecified, uses the fastest tool for each test case.
+# main_tool = "test1"
+
 ## Each tool starts with a `[[tools]]`, followed by attributes for each tool:
 ##
 ##   - name: used for pretty printing results
