@@ -513,7 +513,6 @@ impl<'a> BenchifyResults<'a> {
                 for timing in timings.iter() {
                     data_writer.serialize((test, executor, timing.as_secs_f64()))?;
                 }
-                println!("{}\t{}\t{:?}", test, executor, Statistics::new(&timings),);
             }
             data_writer.flush()?;
         }
@@ -522,7 +521,7 @@ impl<'a> BenchifyResults<'a> {
             // Write out data for each test
             use std::io::Write;
             let mut file = std::fs::File::create(results_dir.join(format!("summary_{}.md", test)))?;
-            writeln!(file, "# Summary of runs for {}\n", test)?;
+            writeln!(file, "# Summary of runs for {}", test)?;
             writeln!(file)?;
             write!(file, "{}", format_summary(self.main_tool, results)?)?;
         }
@@ -551,7 +550,14 @@ impl<'a> BenchifyResults<'a> {
     }
 
     fn display_summary(&self) -> Result<()> {
-        error!("TODO display_summary");
+        for (test, results) in self.results_by_test() {
+            println!();
+            println!("# {}", test);
+            println!();
+            print!("{}", format_summary(self.main_tool, results)?);
+            println!();
+        }
+
         Ok(())
     }
 }
