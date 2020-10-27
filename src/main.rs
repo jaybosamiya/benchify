@@ -178,11 +178,20 @@ pub struct Test {
 impl Test {
     pub fn interpolated_into(&self, s: &str) -> String {
         let extra_args = &self.extra_args.as_ref().unwrap_or(&vec![]).join(" ");
+        let extra_args_quoted = &self
+            .extra_args
+            .as_ref()
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|x| format!("'{}'", x))
+            .collect::<Vec<_>>()
+            .join(" ");
         let s = s
             .replace("{NAME}", &self.name)
             .replace("{TAG}", &self.tag)
             .replace("\"{...}\"", &extra_args)
-            .replace("'{...}'", &extra_args);
+            .replace("'{...}'", &extra_args)
+            .replace("{...}", &extra_args_quoted);
         if let Some(file) = &self.file {
             s.replace("{FILE}", file)
         } else {
