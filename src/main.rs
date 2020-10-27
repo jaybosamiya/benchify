@@ -20,6 +20,9 @@ struct CmdLineOpts {
     /// Path to benchify.toml file
     #[clap(default_value = "./benchify.toml")]
     benchify_toml: PathBuf,
+    /// Generate template benchify.toml file
+    #[clap(long)]
+    template: bool,
 }
 
 type Args = Vec<String>;
@@ -626,14 +629,23 @@ fn main() -> Result<()> {
 
     let opts = CmdLineOpts::parse();
 
-    let config: BenchifyConfig = toml::from_str(
-        &std::fs::read_to_string(&opts.benchify_toml)
-            .or(Err(eyre!("Could not read {:?}", &opts.benchify_toml)))?,
-    )?;
+    if opts.template {
+        if opts.benchify_toml.exists() {
+            error!("{:?} already exists. Not overwriting.", opts.benchify_toml);
+            std::process::exit(1);
+        } else {
+            std::fs::write(opts.benchify_toml, include_str!("template.toml"))?;
+        }
+    } else {
+        let config: BenchifyConfig = toml::from_str(
+            &std::fs::read_to_string(&opts.benchify_toml)
+                .or(Err(eyre!("Could not read {:?}", &opts.benchify_toml)))?,
+        )?;
 
-    let results = config.execute()?;
-    results.save_to_directory(&config.results_dir())?;
-    results.display_summary()?;
+        let results = config.execute()?;
+        results.save_to_directory(&config.results_dir())?;
+        results.display_summary()?;
+    }
 
     Ok(())
 }
