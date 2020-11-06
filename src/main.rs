@@ -4,6 +4,7 @@ use clap::Clap;
 use color_eyre::eyre::{self, eyre, Result};
 use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, error, info, trace, warn}; // error >> warn >> info >> debug >> trace
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use std::collections::{HashMap, HashSet};
@@ -471,6 +472,15 @@ impl BenchifyConfig {
     pub fn execute(&self) -> Result<BenchifyResults> {
         self.confirm_config_sanity();
 
+        if !self.tests.par_iter().all(|test| {
+            self.tools
+                .par_iter()
+                .all(|tool| tool.prepare(test, self.warmup).is_ok())
+        }) {
+            error!("Preparation failed");
+            std::process::exit(1);
+        }
+
         Ok(BenchifyResults {
             results: self
                 .tests
@@ -483,7 +493,6 @@ impl BenchifyConfig {
                         info!("Testing tool {}", tool.name);
                         trace!("Tool: {:?}", tool.runners[&test.tag]);
 
-                        tool.prepare(test, self.warmup)?;
                         let timings = self.get_timings(test, tool)?;
                         tool.cleanup(test)?;
 
