@@ -77,8 +77,18 @@ pub struct Tool {
 }
 
 impl Tool {
-    fn run_cmd(&self, cmdtype: &str, test: &Test, cmd: &ShellCommand) -> Result<()> {
-        let pb = ProgressBar::new_spinner();
+    fn run_cmd(
+        &self,
+        cmdtype: &str,
+        test: &Test,
+        cmd: &ShellCommand,
+        opb: Option<ProgressBar>,
+    ) -> Result<()> {
+        let pb = if let Some(opb) = opb {
+            opb
+        } else {
+            ProgressBar::new_spinner()
+        };
         pb.set_style(
             ProgressStyle::default_spinner().template("{spinner:.green} {msg} ({elapsed_precise})"),
         );
@@ -118,10 +128,15 @@ impl Tool {
         Ok(())
     }
 
-    pub fn prepare(&self, test: &Test, global_warmup: Option<u32>) -> Result<()> {
+    pub fn prepare(
+        &self,
+        test: &Test,
+        global_warmup: Option<u32>,
+        opb: Option<ProgressBar>,
+    ) -> Result<()> {
         let runner = &self.runners[&test.tag];
         if let Some(cmd) = &runner.prepare {
-            self.run_cmd("Preparation", test, cmd)?;
+            self.run_cmd("Preparation", test, cmd, opb)?;
             if let Some(warmup) = runner.warmup.or(global_warmup) {
                 info!("Performing {} warmup runs", warmup);
                 for _ in 0..warmup {
@@ -182,7 +197,7 @@ impl Tool {
 
     pub fn cleanup(&self, test: &Test) -> Result<()> {
         if let Some(cmd) = &self.runners[&test.tag].cleanup {
-            self.run_cmd("Clean up", test, cmd)
+            self.run_cmd("Clean up", test, cmd, None)
         } else {
             Ok(())
         }
@@ -472,13 +487,29 @@ impl BenchifyConfig {
     pub fn execute(&self) -> Result<BenchifyResults> {
         self.confirm_config_sanity();
 
-        if !self.tests.par_iter().all(|test| {
-            self.tools
-                .par_iter()
-                .all(|tool| tool.prepare(test, self.warmup).is_ok())
-        }) {
-            error!("Preparation failed");
-            std::process::exit(1);
+        {
+            // Run all preparation in parallel
+            let mpb = MultiProgress::new();
+            let mut t_t_pb = self
+                .tests
+                .iter()
+                .map(|test| {
+                    self.tools
+                        .iter()
+                        .map(|tool| (test, tool, Some(mpb.add(ProgressBar::new_spinner()))))
+                        .collect::<Vec<(_, _, _)>>()
+                })
+                .flatten()
+                .collect::<Vec<(_, _, _)>>();
+            let mpb_thread = std::thread::spawn(move || mpb.join_and_clear());
+            if !t_t_pb
+                .par_iter_mut()
+                .all(|(test, tool, pb)| tool.prepare(test, self.warmup, pb.take()).is_ok())
+            {
+                error!("Preparation failed");
+                std::process::exit(1);
+            }
+            mpb_thread.join().unwrap()?;
         }
 
         Ok(BenchifyResults {
