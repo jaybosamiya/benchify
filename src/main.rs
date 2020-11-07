@@ -128,21 +128,10 @@ impl Tool {
         Ok(())
     }
 
-    pub fn prepare(
-        &self,
-        test: &Test,
-        global_warmup: Option<u32>,
-        opb: Option<ProgressBar>,
-    ) -> Result<()> {
+    pub fn prepare(&self, test: &Test, opb: Option<ProgressBar>) -> Result<()> {
         let runner = &self.runners[&test.tag];
         if let Some(cmd) = &runner.prepare {
             self.run_cmd("Preparation", test, cmd, opb)?;
-            if let Some(warmup) = runner.warmup.or(global_warmup) {
-                info!("Performing {} warmup runs", warmup);
-                for _ in 0..warmup {
-                    self.run(test)?;
-                }
-            }
             Ok(())
         } else {
             Ok(())
@@ -428,7 +417,12 @@ impl BenchifyConfig {
         }
     }
 
-    fn get_timings(&self, test: &Test, tool: &Tool) -> Result<Vec<std::time::Duration>> {
+    fn get_timings(
+        &self,
+        test: &Test,
+        tool: &Tool,
+        global_warmup: Option<u32>,
+    ) -> Result<Vec<std::time::Duration>> {
         let num_initial_estimates = self.max_runs().min(2) as usize;
 
         let expected_time_seconds = 2.5f32;
@@ -439,6 +433,17 @@ impl BenchifyConfig {
                      [{wide_bar:.cyan/blue}] {pos}/{len} ({elapsed} -- ETA {eta})",
             )
             .progress_chars("#>-");
+
+        if let Some(warmup_runs) = tool.runners[&test.tag].warmup.or(global_warmup) {
+            let pb = ProgressBar::new(warmup_runs as u64);
+            pb.set_style(pb_style.clone());
+            pb.set_message(&format!("[{}] [{}] Warmup runs", test.name, tool.name));
+            for _ in 0..warmup_runs {
+                pb.inc(1);
+                tool.run(test)?;
+            }
+            pb.finish_and_clear();
+        }
 
         let pb = ProgressBar::new(num_initial_estimates as u64);
         pb.set_style(pb_style.clone());
@@ -512,7 +517,7 @@ impl BenchifyConfig {
             let mpb_thread = std::thread::spawn(move || mpb.join_and_clear());
             if !t_t_pb
                 .par_iter_mut()
-                .all(|(test, tool, pb)| tool.prepare(test, self.warmup, pb.take()).is_ok())
+                .all(|(test, tool, pb)| tool.prepare(test, pb.take()).is_ok())
             {
                 error!("Preparation failed");
                 std::process::exit(1);
@@ -533,9 +538,9 @@ impl BenchifyConfig {
                         trace!("Tool: {:?}", tool.runners[&test.tag]);
 
                         if !self.parallel_prep() {
-                            tool.prepare(test, self.warmup, None)?;
+                            tool.prepare(test, None)?;
                         }
-                        let timings = self.get_timings(test, tool)?;
+                        let timings = self.get_timings(test, tool, self.warmup)?;
                         tool.cleanup(test)?;
 
                         Ok((test.name.as_ref(), tool.name.as_ref(), timings))
