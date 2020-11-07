@@ -253,6 +253,7 @@ impl Test {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct BenchifyConfig {
     benchify_version: usize,
+    parallel_prep: Option<bool>,
     warmup: Option<u32>,
     min_runs: Option<u32>,
     max_runs: Option<u32>,
@@ -276,6 +277,13 @@ impl BenchifyConfig {
         self.results_dir
             .clone()
             .unwrap_or(PathBuf::from("./benchify-results/"))
+    }
+
+    fn parallel_prep(&self) -> bool {
+        match self.parallel_prep {
+            None => false,
+            Some(b) => b,
+        }
     }
 
     fn confirm_config_sanity(&self) {
@@ -487,7 +495,7 @@ impl BenchifyConfig {
     pub fn execute(&self) -> Result<BenchifyResults> {
         self.confirm_config_sanity();
 
-        {
+        if self.parallel_prep() {
             // Run all preparation in parallel
             let mpb = MultiProgress::new();
             let mut t_t_pb = self
@@ -524,6 +532,9 @@ impl BenchifyConfig {
                         info!("Testing tool {}", tool.name);
                         trace!("Tool: {:?}", tool.runners[&test.tag]);
 
+                        if !self.parallel_prep() {
+                            tool.prepare(test, self.warmup, None)?;
+                        }
                         let timings = self.get_timings(test, tool)?;
                         tool.cleanup(test)?;
 
