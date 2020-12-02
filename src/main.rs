@@ -121,7 +121,14 @@ impl Tool {
             error!(
                 "{} of {} for {} failed with status code {}",
                 cmdtype, self.name, test.tag, status
-            )
+            );
+            return Err(eyre!(
+                "{} of {} for {} failed with status code {}",
+                cmdtype,
+                self.name,
+                test.tag,
+                status
+            ));
         }
         pb.finish_and_clear();
 
@@ -179,7 +186,11 @@ impl Tool {
             trace!("Generated output\n{:?}", output);
             info!("Ran {} in {} ms", self.name, elapsed_time.as_millis());
         } else {
-            error!("Command exited with non zero status code {}", output.status)
+            error!("Command exited with non zero status code {}", output.status);
+            return Err(eyre!(
+                "Command exited with non zero status code {}",
+                output.status
+            ));
         }
         Ok(elapsed_time)
     }
