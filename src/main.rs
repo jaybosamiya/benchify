@@ -192,7 +192,24 @@ impl Tool {
                 output.status
             ));
         }
-        Ok(elapsed_time)
+        if let Some(true) = test.stdout_is_timing {
+            let timing = std::time::Duration::from_secs_f64(
+                String::from_utf8(output.stdout.to_owned())?
+                    .trim()
+                    .parse()?,
+            );
+            if timing > elapsed_time {
+                Err(eyre!(
+                    "Program lied about elapsed time at stdout: {:?} is not less than {:?}",
+                    timing,
+                    elapsed_time
+                ))
+            } else {
+                Ok(timing)
+            }
+        } else {
+            Ok(elapsed_time)
+        }
     }
 
     pub fn cleanup(&self, test: &Test) -> Result<()> {
@@ -211,6 +228,7 @@ pub struct Test {
     file: Option<String>,
     extra_args: Option<Vec<String>>,
     stdin_from_cmd: Option<String>,
+    stdout_is_timing: Option<bool>,
 }
 
 impl Test {

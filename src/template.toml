@@ -93,6 +93,9 @@ run_cmd = "program2 {FILE} -- {...}"
 ##   - file: input file to the program (optional; only required if used by runner)
 ##   - extra_args: useful for passing repeated arguments to tools (empty if omitted)
 ##   - stdin_from_cmd: useful if runner expects stdin. Will be piped.
+##   - stdout_is_timing: whether the stdout is a single float that
+##                   represents the timing. useful if the tool itself is
+##                   a benchmark. (optional; false if omitted)
 [[tests]]
 name = "test1"
 tag = "tag1"
