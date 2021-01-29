@@ -469,7 +469,14 @@ impl BenchifyConfig {
             pb.set_message(&format!("[{}] [{}] Warmup runs", test.name, tool.name));
             for _ in 0..warmup_runs {
                 pb.inc(1);
-                tool.run(test)?;
+                tool.run(test).map_err(|e| {
+                    pb.set_style(ProgressStyle::default_bar().template("{spinner:.green} {msg}"));
+                    pb.finish_with_message(&format!(
+                        "[{}] [{}] Failure during warmup: {}",
+                        test.name, tool.name, e
+                    ));
+                    e
+                })?;
             }
             pb.finish_and_clear();
         }
@@ -483,7 +490,14 @@ impl BenchifyConfig {
         let initial_estimates = (0..num_initial_estimates)
             .map(|_| {
                 pb.inc(1);
-                tool.run(test)
+                tool.run(test).map_err(|e| {
+                    pb.set_style(ProgressStyle::default_bar().template("{spinner:.green} {msg}"));
+                    pb.finish_with_message(&format!(
+                        "[{}] [{}] Failure during initial estimates: {}",
+                        test.name, tool.name, e
+                    ));
+                    e
+                })
             })
             .collect::<Result<Vec<_>>>()?;
         pb.finish_and_clear();
@@ -505,7 +519,14 @@ impl BenchifyConfig {
         let remaining_iterations = (num_initial_estimates..preferred_number_of_iterations as usize)
             .map(|i| {
                 pb.set_position(i as u64);
-                tool.run(test)
+                tool.run(test).map_err(|e| {
+                    pb.set_style(ProgressStyle::default_bar().template("{spinner:.green} {msg}"));
+                    pb.finish_with_message(&format!(
+                        "[{}] [{}] Failure during benchmarking run#{}: {}",
+                        test.name, tool.name, i, e
+                    ));
+                    e
+                })
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -569,7 +590,7 @@ impl BenchifyConfig {
                         if !self.parallel_prep() {
                             tool.prepare(test, None)?;
                         }
-                        let timings = self.get_timings(test, tool, self.warmup)?;
+                        let timings = self.get_timings(test, tool, self.warmup);
                         tool.cleanup(test)?;
 
                         Ok((test.name.as_ref(), tool.name.as_ref(), timings))
@@ -585,22 +606,33 @@ impl BenchifyConfig {
 #[derive(Debug)]
 pub struct BenchifyResults<'a> {
     // (test, executor, [timing])
-    results: Vec<(&'a str, &'a str, Vec<std::time::Duration>)>,
+    results: Vec<(&'a str, &'a str, Result<Vec<std::time::Duration>>)>,
     main_tool: Option<&'a str>,
 }
 
 fn format_summary(
     main: Option<&str>,
-    results: Vec<(&str, &[std::time::Duration])>,
+    results: Vec<(&str, Result<&[std::time::Duration]>)>,
 ) -> Result<String> {
     use std::fmt::Write;
 
     let mut result = String::new();
-    let summaries = results.iter().map(|(n, t)| (n, Statistics::new(t)));
+    let summaries = results
+        .iter()
+        .map(|(n, t)| (n, t.as_ref().map(|t| Statistics::new(t))));
     let comparison_point = if let Some(main) = main {
-        summaries.clone().find(|(t, _s)| *t == &main).unwrap()
+        summaries
+            .clone()
+            .find(|(t, _s)| *t == &main)
+            .map(|(t, s)| (t, s.unwrap()))
+            .unwrap()
     } else {
-        summaries.clone().min_by_key(|(_t, s)| s.mean).unwrap()
+        summaries
+            .clone()
+            .filter(|(_t, s)| s.is_ok())
+            .map(|(t, s)| (t, s.unwrap()))
+            .min_by_key(|(_t, s)| s.mean)
+            .unwrap()
     };
     let summaries = summaries.map(|(n, stats)| {
         let name = if comparison_point.0 == n {
@@ -608,13 +640,18 @@ fn format_summary(
         } else {
             n.to_string()
         };
-        let mean = format!("{:.3}", stats.mean.as_secs_f64() * 1000.);
-        let stddev = format!("{:.3}", stats.sample_stddev.as_secs_f64() * 1000.);
-        let ratio = format!(
-            "{:.3}",
-            stats.mean.as_secs_f64() / comparison_point.1.mean.as_secs_f64()
-        );
-        (name, mean, stddev, ratio)
+        match stats {
+            Ok(stats) => {
+                let mean = format!("{:.3}", stats.mean.as_secs_f64() * 1000.);
+                let stddev = format!("{:.3}", stats.sample_stddev.as_secs_f64() * 1000.);
+                let ratio = format!(
+                    "{:.3}",
+                    stats.mean.as_secs_f64() / comparison_point.1.mean.as_secs_f64()
+                );
+                (name, mean, stddev, ratio)
+            }
+            Err(e) => (name, "FAIL".to_string(), "FAIL".to_string(), e.to_string()),
+        }
     });
     let lengths = summaries
         .clone()
@@ -679,8 +716,10 @@ impl<'a> BenchifyResults<'a> {
             let mut data_writer = csv::Writer::from_path(results_dir.join("data.csv"))?;
             data_writer.write_record(&["Test", "Executor", "Timing (s)"])?;
             for (test, executor, timings) in self.results.iter() {
-                for timing in timings.iter() {
-                    data_writer.serialize((test, executor, timing.as_secs_f64()))?;
+                if let Ok(timings) = timings {
+                    for timing in timings.iter() {
+                        data_writer.serialize((test, executor, timing.as_secs_f64()))?;
+                    }
                 }
             }
             data_writer.flush()?;
@@ -698,13 +737,12 @@ impl<'a> BenchifyResults<'a> {
         Ok(())
     }
 
-    fn results_by_test(&self) -> Vec<(&'a str, Vec<(&'a str, &[std::time::Duration])>)> {
+    fn results_by_test(&self) -> Vec<(&'a str, Vec<(&'a str, Result<&[std::time::Duration]>)>)> {
         let mut mapped = HashMap::new();
         for (test, executor, timings) in self.results.iter() {
-            mapped
-                .entry(*test)
-                .or_insert(vec![])
-                .push((*executor, timings.as_ref()));
+            mapped.entry(*test).or_insert(vec![]).push((*executor, {
+                timings.as_deref().map_err(|e| eyre!("{}", e))
+            }));
         }
         let mut res = vec![];
         for (test, _executor, _timings) in self.results.iter() {
@@ -718,10 +756,12 @@ impl<'a> BenchifyResults<'a> {
     fn results_by_executor(&self) -> Vec<(&'a str, Vec<(&'a str, &[std::time::Duration])>)> {
         let mut mapped = HashMap::new();
         for (test, executor, timings) in self.results.iter() {
-            mapped
-                .entry(*executor)
-                .or_insert(vec![])
-                .push((*test, timings.as_ref()));
+            if let Ok(timings) = timings {
+                mapped
+                    .entry(*executor)
+                    .or_insert(vec![])
+                    .push((*test, timings.as_ref()));
+            }
         }
         let mut res = vec![];
         for (_test, executor, _timings) in self.results.iter() {
