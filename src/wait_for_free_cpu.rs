@@ -32,3 +32,24 @@ pub fn and_run<T>(f: impl FnOnce() -> T) -> T {
         }
     }
 }
+
+/// Set the max limit for number of "free CPUs" available. Will
+/// automatically clamp to the total number of CPUs known to exist on
+/// the system. Exists only to make the "free CPUs" estimate more
+/// conservative.
+pub fn restrict_free_cpus_to(n: usize) {
+    let mut w = WAIT_FOR_FREE_CPU.lock().unwrap();
+
+    // We can't ever let it go below the number that are currently
+    // blocked, otherwise the expected invariant used by `and_run`
+    // goes bad.
+    let n = n.max(w.num_blocked);
+
+    // We don't let it ever go above the number of CPUs known to exist
+    // on the system. This is what we guarantee by contract of this
+    // function.
+    let n = n.min(num_cpus::get());
+
+    // Set the value
+    w.num_cpus = n;
+}

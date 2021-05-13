@@ -26,6 +26,10 @@ struct CmdLineOpts {
     /// Generate template benchify.toml file
     #[clap(long)]
     template: bool,
+    #[clap(short, long)]
+    /// Maximum number of jobs to run in parallel in the preparation
+    /// stage.
+    max_parallelism: Option<usize>,
 }
 
 type Args = Vec<String>;
@@ -836,6 +840,10 @@ fn main() -> Result<()> {
     }
 
     let opts = CmdLineOpts::parse();
+
+    if let Some(m) = opts.max_parallelism {
+        wait_for_free_cpu::restrict_free_cpus_to(m);
+    }
 
     if opts.template {
         if opts.benchify_toml.exists() {
