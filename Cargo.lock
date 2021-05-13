@@ -57,13 +57,15 @@ dependencies = [
 
 [[package]]
 name = "benchify"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "color-eyre",
  "csv",
  "indicatif",
+ "lazy_static",
  "log",
+ "num_cpus",
  "pretty_env_logger",
  "rayon",
  "serde",

@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+mod wait_for_free_cpu;
+
 const PROGRAM_NAME: &'static str = env!("CARGO_PKG_NAME", "expected to be built with cargo");
 const PROGRAM_VERSION: &'static str = env!("CARGO_PKG_VERSION", "expected to be built with cargo");
 const PROGRAM_AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS", "expected to be built with cargo");
@@ -89,6 +91,7 @@ impl Tool {
         } else {
             ProgressBar::new_spinner()
         };
+        pb.reset_elapsed();
         pb.set_style(
             ProgressStyle::default_spinner().template("{spinner:.green} {msg} ({elapsed_precise})"),
         );
@@ -565,10 +568,9 @@ impl BenchifyConfig {
                 .flatten()
                 .collect::<Vec<(_, _, _)>>();
             let mpb_thread = std::thread::spawn(move || mpb.join_and_clear());
-            if !t_t_pb
-                .par_iter_mut()
-                .all(|(test, tool, pb)| tool.prepare(test, pb.take()).is_ok())
-            {
+            if !t_t_pb.par_iter_mut().all(|(test, tool, pb)| {
+                wait_for_free_cpu::and_run(|| tool.prepare(test, pb.take()).is_ok())
+            }) {
                 error!("Preparation failed");
                 std::process::exit(1);
             }
