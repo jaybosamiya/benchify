@@ -30,6 +30,10 @@ struct CmdLineOpts {
     /// Maximum number of jobs to run in parallel in the preparation
     /// stage.
     max_parallelism: Option<usize>,
+    #[clap(long)]
+    /// Utilize data already in the CSV, only running runners for
+    /// situations where CSV data is not found.
+    use_known_csv_data: bool,
 }
 
 type Args = Vec<String>;
@@ -453,6 +457,41 @@ impl BenchifyConfig {
         }
     }
 
+    fn get_timings_from_csv(&self, test: &Test, tool: &Tool) -> Result<Vec<std::time::Duration>> {
+        let results_dir = self.results_dir();
+        let csv_file = results_dir.join("data.csv");
+        let data_reader = csv::Reader::from_path(csv_file)?;
+
+        #[derive(Debug, Deserialize)]
+        struct Record {
+            #[serde(rename = "Test")]
+            test: String,
+            #[serde(rename = "Executor")]
+            tool: String,
+            #[serde(rename = "Timing (s)")]
+            timing: f64,
+        }
+
+        let res: Vec<_> = data_reader
+            .into_deserialize()
+            .filter_map(|r: csv::Result<Record>| {
+                let r: Record = r.ok()?;
+                (r.test == test.name && r.tool == tool.name)
+                    .then(|| std::time::Duration::from_secs_f64(r.timing))
+            })
+            .collect();
+
+        if res.len() == 0 {
+            Err(eyre!(
+                "timing for {} -- {} not found. should test for it",
+                test.name,
+                tool.name
+            ))
+        } else {
+            Ok(res)
+        }
+    }
+
     fn get_timings(
         &self,
         test: &Test,
@@ -554,7 +593,7 @@ impl BenchifyConfig {
         Ok(timings)
     }
 
-    pub fn execute(&self) -> Result<BenchifyResults> {
+    pub fn execute(&self, use_known_csv_data: bool) -> Result<BenchifyResults> {
         self.confirm_config_sanity();
 
         if self.parallel_prep() {
@@ -596,7 +635,18 @@ impl BenchifyConfig {
                         if !self.parallel_prep() {
                             tool.prepare(test, None)?;
                         }
-                        let timings = self.get_timings(test, tool, self.warmup);
+
+                        let timings = if use_known_csv_data {
+                            self.get_timings_from_csv(test, tool).or_else(|e| {
+                                info!(
+                                    "Re-analyzing timing info for {}/{} because: {}",
+                                    test.name, tool.name, e
+                                );
+                                self.get_timings(test, tool, self.warmup)
+                            })
+                        } else {
+                            self.get_timings(test, tool, self.warmup)
+                        };
                         tool.cleanup(test)?;
 
                         Ok((test.name.as_ref(), tool.name.as_ref(), timings))
@@ -858,7 +908,7 @@ fn main() -> Result<()> {
                 .or(Err(eyre!("Could not read {:?}", &opts.benchify_toml)))?,
         )?;
 
-        let results = config.execute()?;
+        let results = config.execute(opts.use_known_csv_data)?;
         results.save_to_directory(&config.results_dir())?;
         results.display_summary()?;
     }
