@@ -8,6 +8,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use std::collections::{HashMap, HashSet};
+use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 
 mod wait_for_free_cpu;
@@ -666,10 +667,12 @@ pub struct BenchifyResults<'a> {
     main_tool: Option<&'a str>,
 }
 
+type Ratios = Option<HashMap<String, f64>>;
+
 fn format_summary(
     main: Option<&str>,
     results: Vec<(&str, Result<&[std::time::Duration]>)>,
-) -> Result<String> {
+) -> Result<(Ratios, String)> {
     use std::fmt::Write;
 
     let mut result = String::new();
@@ -690,27 +693,32 @@ fn format_summary(
             .min_by_key(|(_t, s)| s.mean)
             .unwrap()
     };
-    let summaries = summaries.map(|(n, stats)| {
-        let name = if comparison_point.0 == n {
-            format!("**{}**", n)
-        } else {
-            n.to_string()
-        };
-        match stats {
-            Ok(stats) => {
-                let mean = format!("{:.3}", stats.mean.as_secs_f64() * 1000.);
-                let stddev = format!("{:.3}", stats.sample_stddev.as_secs_f64() * 1000.);
-                let ratio = format!(
-                    "{:.3}",
-                    stats.mean.as_secs_f64() / comparison_point.1.mean.as_secs_f64()
-                );
-                (name, mean, stddev, ratio)
+    let mut ratios = HashMap::new();
+    let summaries: Vec<(String, String, String, String)> = summaries
+        .map(|(n, stats)| {
+            let name = if comparison_point.0 == n {
+                format!("**{}**", n)
+            } else {
+                n.to_string()
+            };
+            match stats {
+                Ok(stats) => {
+                    let mean = format!("{:.3}", stats.mean.as_secs_f64() * 1000.);
+                    let stddev = format!("{:.3}", stats.sample_stddev.as_secs_f64() * 1000.);
+                    let ratio = stats.mean.as_secs_f64() / comparison_point.1.mean.as_secs_f64();
+                    if main.is_some() {
+                        ratios.insert(n.to_string(), ratio);
+                    }
+                    let ratio = format!("{:.3}", ratio);
+                    (name, mean, stddev, ratio)
+                }
+                Err(e) => (name, "FAIL".to_string(), "FAIL".to_string(), e.to_string()),
             }
-            Err(e) => (name, "FAIL".to_string(), "FAIL".to_string(), e.to_string()),
-        }
-    });
+        })
+        .collect();
     let lengths = summaries
-        .clone()
+        .iter()
+        .cloned()
         .chain(std::iter::once((
             "".to_string(),
             "Mean (ms)".to_string(),
@@ -758,7 +766,7 @@ fn format_summary(
             r = ratio,
         )?;
     }
-    Ok(result)
+    Ok((main.is_some().then(|| ratios), result))
 }
 
 impl<'a> BenchifyResults<'a> {
@@ -787,7 +795,7 @@ impl<'a> BenchifyResults<'a> {
             let mut file = std::fs::File::create(results_dir.join(format!("summary_{}.md", test)))?;
             writeln!(file, "# Summary of runs for {}", test)?;
             writeln!(file)?;
-            write!(file, "{}", format_summary(self.main_tool, results)?)?;
+            write!(file, "{}", format_summary(self.main_tool, results)?.1)?;
         }
 
         Ok(())
@@ -829,11 +837,48 @@ impl<'a> BenchifyResults<'a> {
     }
 
     fn display_summary(&self) -> Result<()> {
+        let mut prod_ratios: HashMap<String, f64> = self
+            .results
+            .iter()
+            .map(|(_test, tool, _timings)| (tool.to_string(), 1.))
+            .collect();
+        let mut num_products = 0;
+
         for (test, results) in self.results_by_test() {
             println!();
             println!("# {}", test);
             println!();
-            print!("{}", format_summary(self.main_tool, results)?);
+            let (ratios, summary) = format_summary(self.main_tool, results)?;
+            print!("{}", summary);
+            println!();
+
+            if let Some(ratios) = ratios {
+                for (tool, prod) in prod_ratios.iter_mut() {
+                    *prod = if let Some(r) = ratios.get(tool) {
+                        *prod * r
+                    } else {
+                        f64::INFINITY
+                    }
+                }
+                num_products += 1;
+            }
+        }
+
+        if num_products > 0 {
+            let mut geomeans: Vec<_> = prod_ratios
+                .into_iter()
+                .map(|(name, ratio)| (name, ratio.powf(1. / num_products as f64)))
+                .collect();
+            geomeans.sort_by_key(|nr| (nr.1 * 10000.) as u64);
+
+            println!("Sorted tools by geo mean of ratios:");
+            for (tool, geomean) in geomeans {
+                if geomean.is_finite() {
+                    println!("{:>6.3} {}", geomean, tool);
+                } else {
+                    println!("-FAIL- {}", tool);
+                }
+            }
             println!();
         }
 
