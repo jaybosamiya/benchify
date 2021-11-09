@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
 mod wait_for_free_cpu;
@@ -92,6 +93,21 @@ pub struct Tool {
     runners: HashMap<Tag, Runner>,
 }
 
+fn read_into(result: &mut Vec<u8>, buf: &mut impl BufRead) {
+    match buf.fill_buf() {
+        Ok(b) => {
+            let l = b.len();
+            result.extend(b.iter());
+            buf.consume(l);
+        }
+        Err(e) => {
+            if e.kind() != std::io::ErrorKind::WouldBlock {
+                panic!("Error: {:?}", e)
+            }
+        }
+    }
+}
+
 impl Tool {
     fn run_cmd(
         &self,
@@ -116,15 +132,21 @@ impl Tool {
         trace!("Running `{}`", cmd);
         let mut process = std::process::Command::new("sh")
             .arg("-c")
-            .arg(cmd)
+            .arg(cmd.clone())
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()?;
+        let mut stdout_bytes: Vec<u8> = vec![];
+        let mut stderr_bytes: Vec<u8> = vec![];
+        let mut stdout = std::io::BufReader::new(process.stdout.take().unwrap());
+        let mut stderr = std::io::BufReader::new(process.stderr.take().unwrap());
         let status = loop {
             match process.try_wait()? {
                 None => {
                     std::thread::sleep(std::time::Duration::from_millis(100));
+                    read_into(&mut stdout_bytes, &mut stdout);
+                    read_into(&mut stderr_bytes, &mut stderr);
                     pb.tick();
                 }
                 Some(status) => {
@@ -139,6 +161,9 @@ impl Tool {
                 "{} of {} for {} failed with status code {}",
                 cmdtype, self.name, test.tag, status
             );
+            error!("COMMAND:\n{}\n\n", cmd);
+            error!("STDOUT:\n{}\n\n", String::from_utf8_lossy(&stdout_bytes));
+            error!("STDERR:\n{}\n\n", String::from_utf8_lossy(&stderr_bytes));
             return Err(eyre!(
                 "{} of {} for {} failed with status code {}",
                 cmdtype,
@@ -635,13 +660,16 @@ impl BenchifyConfig {
                 .flatten()
                 .collect::<Vec<(_, _, _)>>();
             let mpb_thread = std::thread::spawn(move || mpb.join_and_clear());
-            if !t_t_pb.par_iter_mut().all(|(test, tool, pb)| {
-                wait_for_free_cpu::and_run(|| {
-                    tool.prepare(test, pb.take(), store_preparation_time)
-                        .is_ok()
+            if let Err(e) = t_t_pb
+                .par_iter_mut()
+                .map(|(test, tool, pb)| {
+                    wait_for_free_cpu::and_run(|| {
+                        tool.prepare(test, pb.take(), store_preparation_time)
+                    })
                 })
-            }) {
-                error!("Preparation failed");
+                .collect::<Result<()>>()
+            {
+                error!("Preparation failed: {}", e);
                 std::process::exit(1);
             }
             mpb_thread.join().unwrap()?;
