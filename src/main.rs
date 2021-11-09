@@ -1,6 +1,6 @@
 #![allow(unused_imports, dead_code)]
 
-use clap::Clap;
+use clap::Parser;
 use color_eyre::eyre::{self, eyre, Result};
 use indicatif::{HumanDuration, MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, error, info, trace, warn}; // error >> warn >> info >> debug >> trace
@@ -18,7 +18,7 @@ const PROGRAM_VERSION: &'static str = env!("CARGO_PKG_VERSION", "expected to be 
 const PROGRAM_AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS", "expected to be built with cargo");
 
 /// A convenient benchmarking tool
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 #[clap(version = PROGRAM_VERSION, author = PROGRAM_AUTHORS)]
 struct CmdLineOpts {
     /// Path to benchify.toml file
@@ -35,6 +35,11 @@ struct CmdLineOpts {
     /// Utilize data already in the CSV, only running runners for
     /// situations where CSV data is not found.
     use_known_csv_data: bool,
+    /// Store preparation times into `./preparation/`
+    /// subdirectory. Currently a kludge, should be improved to
+    /// `preparation.csv` at some point.
+    #[clap(long)]
+    store_preparation_time: bool,
 }
 
 type Args = Vec<String>;
@@ -147,10 +152,24 @@ impl Tool {
         Ok(())
     }
 
-    pub fn prepare(&self, test: &Test, opb: Option<ProgressBar>) -> Result<()> {
+    pub fn prepare(
+        &self,
+        test: &Test,
+        opb: Option<ProgressBar>,
+        store_preparation_time: bool,
+    ) -> Result<()> {
         let runner = &self.runners[&test.tag];
         if let Some(cmd) = &runner.prepare {
+            let timer = std::time::Instant::now();
             self.run_cmd("Preparation", test, cmd, opb)?;
+            if store_preparation_time {
+                let elapsed = timer.elapsed().as_secs_f64();
+                let prep_dir = Path::new("./preparation");
+                std::fs::create_dir_all(prep_dir)?;
+                assert!(prep_dir.is_dir());
+                let prep_path = prep_dir.join(format!("{}-----{}.prep-time", self.name, test.name));
+                std::fs::write(prep_path, format!("{}", elapsed)).unwrap();
+            }
             Ok(())
         } else {
             Ok(())
@@ -594,7 +613,11 @@ impl BenchifyConfig {
         Ok(timings)
     }
 
-    pub fn execute(&self, use_known_csv_data: bool) -> Result<BenchifyResults> {
+    pub fn execute(
+        &self,
+        use_known_csv_data: bool,
+        store_preparation_time: bool,
+    ) -> Result<BenchifyResults> {
         self.confirm_config_sanity();
 
         if self.parallel_prep() {
@@ -613,7 +636,10 @@ impl BenchifyConfig {
                 .collect::<Vec<(_, _, _)>>();
             let mpb_thread = std::thread::spawn(move || mpb.join_and_clear());
             if !t_t_pb.par_iter_mut().all(|(test, tool, pb)| {
-                wait_for_free_cpu::and_run(|| tool.prepare(test, pb.take()).is_ok())
+                wait_for_free_cpu::and_run(|| {
+                    tool.prepare(test, pb.take(), store_preparation_time)
+                        .is_ok()
+                })
             }) {
                 error!("Preparation failed");
                 std::process::exit(1);
@@ -634,7 +660,7 @@ impl BenchifyConfig {
                         trace!("Tool: {:?}", tool.runners[&test.tag]);
 
                         if !self.parallel_prep() {
-                            tool.prepare(test, None)?;
+                            tool.prepare(test, None, store_preparation_time)?;
                         }
 
                         let timings = if use_known_csv_data {
@@ -953,7 +979,7 @@ fn main() -> Result<()> {
                 .or(Err(eyre!("Could not read {:?}", &opts.benchify_toml)))?,
         )?;
 
-        let results = config.execute(opts.use_known_csv_data)?;
+        let results = config.execute(opts.use_known_csv_data, opts.store_preparation_time)?;
         results.save_to_directory(&config.results_dir())?;
         results.display_summary()?;
     }
