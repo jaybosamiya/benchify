@@ -93,19 +93,14 @@ pub struct Tool {
     runners: HashMap<Tag, Runner>,
 }
 
-fn read_into(result: &mut Vec<u8>, buf: &mut impl BufRead) {
-    match buf.fill_buf() {
-        Ok(b) => {
-            let l = b.len();
-            result.extend(b.iter());
-            buf.consume(l);
-        }
-        Err(e) => {
-            if e.kind() != std::io::ErrorKind::WouldBlock {
-                panic!("Error: {:?}", e)
-            }
-        }
-    }
+fn delayed_blocking_read_lossy_string(
+    mut buf: impl std::io::Read + std::marker::Send + 'static,
+) -> std::thread::JoinHandle<Result<String>> {
+    std::thread::spawn(move || {
+        let mut res = vec![];
+        buf.read_to_end(&mut res)?;
+        Ok(String::from_utf8_lossy(&res).into_owned())
+    })
 }
 
 impl Tool {
@@ -137,16 +132,12 @@ impl Tool {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()?;
-        let mut stdout_bytes: Vec<u8> = vec![];
-        let mut stderr_bytes: Vec<u8> = vec![];
-        let mut stdout = std::io::BufReader::new(process.stdout.take().unwrap());
-        let mut stderr = std::io::BufReader::new(process.stderr.take().unwrap());
+        let stdout = delayed_blocking_read_lossy_string(process.stdout.take().unwrap());
+        let stderr = delayed_blocking_read_lossy_string(process.stderr.take().unwrap());
         let status = loop {
             match process.try_wait()? {
                 None => {
                     std::thread::sleep(std::time::Duration::from_millis(100));
-                    read_into(&mut stdout_bytes, &mut stdout);
-                    read_into(&mut stderr_bytes, &mut stderr);
                     pb.tick();
                 }
                 Some(status) => {
@@ -162,8 +153,8 @@ impl Tool {
                 cmdtype, self.name, test.tag, status
             );
             error!("COMMAND:\n{}\n\n", cmd);
-            error!("STDOUT:\n{}\n\n", String::from_utf8_lossy(&stdout_bytes));
-            error!("STDERR:\n{}\n\n", String::from_utf8_lossy(&stderr_bytes));
+            error!("STDOUT:\n{}\n\n", stdout.join().unwrap()?);
+            error!("STDERR:\n{}\n\n", stderr.join().unwrap()?);
             return Err(eyre!(
                 "{} of {} for {} failed with status code {}",
                 cmdtype,
