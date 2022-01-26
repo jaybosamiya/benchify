@@ -234,10 +234,7 @@ impl Tool {
             info!("Ran {} in {} ms", self.name, elapsed_time.as_millis());
         } else {
             error!("Command exited with non zero status code {}", output.status);
-            return Err(eyre!(
-                "Command exited with non zero status code {}",
-                output.status
-            ));
+            return Err(eyre!("Exit code {}", output.status));
         }
         if let Some(true) = test.stdout_is_timing {
             let timing = std::time::Duration::from_secs_f64(
@@ -761,6 +758,7 @@ fn format_summary(
             }
         })
         .collect();
+    let ratio_to_header = format!("Ratio to {}", comparison_point.0);
     let lengths = summaries
         .iter()
         .cloned()
@@ -768,7 +766,7 @@ fn format_summary(
             "".to_string(),
             "Mean (ms)".to_string(),
             "StdDev (ms)".to_string(),
-            "Ratio".to_string(),
+            ratio_to_header.clone(),
         )))
         .map(|(t, m, s, r)| (t.len(), m.len(), s.len(), r.len()));
     let name_length = lengths.clone().map(|l| l.0).max().unwrap();
@@ -786,7 +784,7 @@ fn format_summary(
         sl = stddev_length,
         s = "StdDev (ms)",
         rl = ratio_length,
-        r = "Ratio",
+        r = ratio_to_header,
     )?;
     writeln!(
         &mut result,
