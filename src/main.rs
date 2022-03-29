@@ -48,6 +48,7 @@ type Args = Vec<String>;
 type ShellCommand = String;
 
 #[derive(Deserialize, Serialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct Runner {
     warmup: Option<u32>,
     prepare: Option<ShellCommand>,
@@ -85,6 +86,7 @@ impl Runner {
 pub type Tag = String;
 
 #[derive(Deserialize, Serialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct Tool {
     name: String,
     program: String,
@@ -266,6 +268,7 @@ impl Tool {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct Test {
     name: String,
     tag: Tag,
@@ -313,6 +316,7 @@ impl Test {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct BenchifyConfig {
     benchify_version: usize,
     parallel_prep: Option<bool>,
@@ -496,6 +500,7 @@ impl BenchifyConfig {
         let data_reader = csv::Reader::from_path(csv_file)?;
 
         #[derive(Debug, Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Record {
             #[serde(rename = "Test")]
             test: String,
