@@ -3,6 +3,11 @@ name = "benchify"
 version = "0.4.5"
 authors = ["Jay Bosamiya <jaybosamiya@gmail.com>"]
 edition = "2021"
+license-file = "./LICENSE"
+readme = "README.md"
+description = "A tool for declaratively specifying and running benchmarks of different tools against various tests"
+homepage = "https://github.com/jaybosamiya/benchify/"
+repository = "https://github.com/jaybosamiya/benchify/"
 
 [dependencies]
 log = "0.4.19"
